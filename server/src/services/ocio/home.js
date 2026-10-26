@@ -13,12 +13,12 @@ const parse = (t, f) => {
 export function finishedRows(db) {
   return db
     .prepare(
-      `SELECT p.finishedAt AS date, p.startedAt, w.type, w.title, w.genres, w.metadata, e.rating, e.id AS entryId
+      `SELECT p.finishedAt AS date, p.startedAt, w.type, w.title, w.genres, w.metadata, w.coverUrl, w.coverPath, e.rating, e.id AS entryId
        FROM passes p JOIN library_entries e ON e.id = p.entryId JOIN works w ON w.id = e.workId
        WHERE p.status = 'done'`
     )
     .all()
-    .map((r) => ({ ...r, genres: parse(r.genres, []), metadata: parse(r.metadata, {}) }));
+    .map(({ coverUrl, coverPath, ...r }) => ({ ...r, cover: coverPath ? `/covers/${coverPath}` : coverUrl || null, genres: parse(r.genres, []), metadata: parse(r.metadata, {}) }));
 }
 
 /** Salidas activas (no borradas). */

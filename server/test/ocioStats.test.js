@@ -61,3 +61,59 @@ test("géneros de cada fuente se traducen a la lista propia", () => {
   assert.deepEqual(mapGenre("Control"), [], "'rol' dentro de otra palabra no es RPG");
   assert.deepEqual(mapGenres(["Fiction", "Dystopias", "Totalitarianism", "Science fiction"]), ["distopia", "ciencia_ficcion"]);
 });
+
+import { readingStats, streaks, intensityLevels, bookRecords } from "../src/lib/ocio/stats.js";
+
+const at = (y, m, d, h, min = 0) => new Date(y, m - 1, d, h, min).toISOString();
+
+test("rachas: la actual llega hasta hoy (o ayer) y la mejor es la más larga", () => {
+  const days = ["2026-10-20", "2026-10-21", "2026-10-22", "2026-10-24", "2026-10-25", "2026-03-01", "2026-03-02", "2026-03-03", "2026-03-04"];
+  assert.deepEqual(streaks(days, "2026-10-26"), { current: 2, best: 4 }, "hoy no leyó: cuenta hasta ayer");
+  assert.deepEqual(streaks([...days, "2026-10-26"], "2026-10-26"), { current: 3, best: 4 });
+  assert.deepEqual(streaks(["2026-10-20"], "2026-10-26"), { current: 0, best: 1 });
+});
+
+test("niveles del calendario: 0 sin lectura y 1–4 por cuartiles", () => {
+  assert.deepEqual(intensityLevels([0, 5, 10, 20, 40, 0]), [0, 1, 2, 3, 4, 0]);
+  assert.deepEqual(intensityLevels([0, 0]), [0, 0]);
+});
+
+test("estadísticas de lectura del año: páginas, ritmo, días, franja y día récord", () => {
+  const sessions = [
+    { startTime: at(2026, 3, 8, 22), durationSeconds: 3600, pagesRead: 40, workId: 1 }, // noche
+    { startTime: at(2026, 3, 9, 23, 30), durationSeconds: 1800, pagesRead: 20, workId: 1 }, // noche
+    { startTime: at(2026, 3, 10, 2), durationSeconds: 1800, pagesRead: 15, workId: 1 }, // madrugada
+    { startTime: at(2026, 7, 1, 9), durationSeconds: 1200, pagesRead: 10, workId: 2 }, // mañana
+    { startTime: at(2025, 12, 31, 22), durationSeconds: 999, pagesRead: 99, workId: 3 }, // otro año
+  ];
+  const r = readingStats(sessions, { year: 2026, today: "2026-10-26" });
+  assert.equal(r.pages, 85);
+  assert.equal(r.seconds, 8400);
+  assert.equal(r.pagesPerHour, 36);
+  assert.equal(r.daysWithReading, 4);
+  assert.equal(r.daysInPeriod, 299, "hasta hoy");
+  assert.equal(r.bestStreak, 3);
+  assert.deepEqual(r.recordDay, { date: "2026-03-08", pages: 40, workId: 1 });
+  assert.equal(r.pagesByMonth[2], 75);
+  assert.equal(r.pagesByMonth[6], 10);
+  assert.deepEqual(r.hourBuckets.map((b) => [b.id, b.sessions]), [["morning", 1], ["afternoon", 0], ["night", 2], ["late", 1]]);
+  assert.equal(r.calendar.find((c) => c.date === "2026-03-08").level, 4);
+  assert.equal(r.calendar.find((c) => c.date === "2026-01-01").level, 0);
+});
+
+test("récords de libros del año", () => {
+  const books = [
+    { entryId: 1, title: "1984", startedAt: "2026-03-02", date: "2026-03-19", rating: 4, metadata: { pages: 328 } },
+    { entryId: 2, title: "La vegetariana", startedAt: "2026-06-01", date: "2026-06-13", rating: 4, metadata: { pages: 192 } },
+    { entryId: 3, title: "Un mago de Terramar", startedAt: "2026-08-01", date: "2026-09-16", rating: 3, metadata: {} },
+    { entryId: 4, title: "Sin fechas", startedAt: null, date: "2026-10-01", metadata: { pages: 100 } },
+  ];
+  const r = bookRecords(books);
+  assert.equal(r.longest.title, "1984");
+  assert.equal(r.fastest.title, "La vegetariana");
+  assert.equal(r.fastest.days, 13);
+  assert.equal(r.slowest.title, "Un mago de Terramar");
+  assert.equal(r.slowest.days, 47);
+  assert.equal(r.averageDays, 26);
+  assert.deepEqual(bookRecords([]), { longest: null, fastest: null, slowest: null, averageDays: null });
+});

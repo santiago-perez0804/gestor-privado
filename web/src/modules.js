@@ -1,5 +1,6 @@
 import {
   Award,
+  BarChart3,
   BookOpen,
   CalendarDays,
   Gamepad2,
@@ -109,6 +110,13 @@ export const MODULES = [
       {
         label: "Agenda",
         items: [{ to: "/ocio/salidas", label: "Salidas", icon: CalendarDays, badge: "outings" }],
+      },
+      {
+        label: "Analizar",
+        items: [
+          { to: "/ocio/estadisticas", label: "Estadísticas", icon: BarChart3 },
+          { to: "/ocio/resumen", label: "Resumen anual", icon: Sparkles },
+        ],
       },
     ],
   },

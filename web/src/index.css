@@ -219,6 +219,34 @@ input:disabled {
   }
 }
 
+/* Resumen anual: la barrita de cada diapositiva es un temporizador (no una animación decorativa),
+   así que mantiene su duración aunque el sistema pida menos movimiento. */
+@keyframes story-progress {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+.story-progress {
+  animation: story-progress var(--story-ms, 6500ms) linear forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .story-progress {
+    animation-duration: var(--story-ms, 6500ms) !important;
+  }
+}
+@keyframes story-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+.story-slide {
+  animation: story-in 0.45s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
 /* Filas que se deslizan de costado (pestañas) sin mostrar la barra de scroll. */
 .no-scrollbar {
   scrollbar-width: none;

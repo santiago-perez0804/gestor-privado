@@ -9,30 +9,13 @@ import { ItemProgress, Panel, SectionTitle, TypeLabel } from "../../components/o
 import { useApi } from "../../hooks/useApi.js";
 import { api } from "../../lib/api.js";
 import { todayDateInputValue } from "../../lib/format.js";
-import { MONTHS_ES_ABBR } from "../../lib/billing.js";
 import { TYPE_ORDER, WORK_TYPES } from "../../lib/ocio/types.js";
 import { categoryInfo, dateTile, longDate, relativeDays, shortDay, weekdayName, OUTING_STATUS } from "../../lib/ocio/outings.js";
 import { useOcio } from "./OcioContext.jsx";
+import { MonthlyBlocks } from "../../components/ocio/MonthlyBlocks.jsx";
+import { YearToggle } from "../../components/ocio/YearToggle.jsx";
 
 const fmt1 = (n) => String(n).replace(".", ",");
-
-function YearToggle({ years, value, onChange }) {
-  return (
-    <div className="flex rounded-xl p-1 gap-0.5" style={{ border: "1px solid var(--border)" }}>
-      {years.map((y) => (
-        <button
-          key={y}
-          onClick={() => onChange(y)}
-          aria-pressed={value === y}
-          className="h-8 px-3 rounded-lg text-sm font-mono"
-          style={{ background: value === y ? "var(--surface-alt)" : "transparent", color: value === y ? "var(--text)" : "var(--text-faint)", fontWeight: value === y ? 600 : 500 }}
-        >
-          {y}
-        </button>
-      ))}
-    </div>
-  );
-}
 
 /** Meta anual de libros: barra con la marca de "dónde tendrías que estar hoy" y edición en el lugar. */
 function BookGoal({ goal, year, onSaved }) {
@@ -86,45 +69,6 @@ function Kpi({ icon: Icon, color, label, value, children, className = "" }) {
       <p className="font-mono text-3xl font-semibold mt-2 leading-none">{value}</p>
       <div className="text-[11px] mt-1.5 truncate" style={{ color: "var(--text-faint)" }}>
         {children}
-      </div>
-    </div>
-  );
-}
-
-/** Un bloque por cada cosa terminada, apilados por mes y pintados según el tipo. */
-function MonthlyBlocks({ months, currentMonth }) {
-  const max = Math.max(4, ...months.map((m) => m.total));
-  const block = Math.max(8, Math.min(18, Math.floor(130 / max)));
-  return (
-    <div>
-      <div className="grid grid-cols-12 gap-1.5 sm:gap-2 items-end" style={{ minHeight: max * (block + 3) + 18 }}>
-        {months.map((m) => (
-          <div key={m.month} className="flex flex-col items-stretch justify-end h-full">
-            {m.total > 0 && (
-              <span className="text-[10px] font-mono text-center mb-1" style={{ color: "var(--text-faint)" }}>
-                {m.total}
-              </span>
-            )}
-            <div className="flex flex-col-reverse gap-[3px]">
-              {TYPE_ORDER.flatMap((t) => m.items.filter((it) => it.type === t)).map((it, i) => (
-                <Link
-                  key={`${it.entryId}-${i}`}
-                  to={`/ocio/obra/${it.entryId}`}
-                  title={`${it.title} · ${WORK_TYPES[it.type].label}`}
-                  className="block rounded-[4px]"
-                  style={{ height: block, background: WORK_TYPES[it.type].color }}
-                />
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-      <div className="grid grid-cols-12 gap-1.5 sm:gap-2 mt-2 pt-2" style={{ borderTop: "1px solid var(--border)" }}>
-        {MONTHS_ES_ABBR.map((name, i) => (
-          <span key={name} className="text-[10px] sm:text-[11px] text-center" style={{ color: i === currentMonth ? "var(--text)" : "var(--text-faint)", fontWeight: i === currentMonth ? 600 : 400 }}>
-            {name}
-          </span>
-        ))}
       </div>
     </div>
   );

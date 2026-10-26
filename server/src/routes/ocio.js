@@ -3,6 +3,7 @@ import { db, coversDir } from "../db/index.js";
 import { downloadCover } from "../services/catalog/covers.js";
 import { createLibrary, todayLocal } from "../services/ocio/library.js";
 import { buildHome, sidebarCounts } from "../services/ocio/home.js";
+import { createOcioStats } from "../services/ocio/stats.js";
 import { GENRES } from "../lib/ocio/genres.js";
 import { handle } from "../lib/http.js";
 
@@ -10,6 +11,8 @@ const notFound = () => Object.assign(new Error("not_found"), { status: 404 });
 
 export default function registerOcioRoutes(app) {
   const lib = createLibrary(db);
+  const ocioStats = createOcioStats(db, lib);
+  const yearOf = (req) => parseInt(req.query.year, 10) || Number(todayLocal().slice(0, 4));
 
   /** Baja la portada remota a data/covers en segundo plano (si falla, queda la URL del catálogo). */
   function cacheCover(item) {
@@ -31,6 +34,11 @@ export default function registerOcioRoutes(app) {
       return buildHome(db, lib, { year, today });
     })
   );
+
+  // Estadísticas: ?year=2026&type=book (general si no hay tipo). Cacheadas hasta que cambien los datos.
+  app.get("/api/ocio/stats", handle((req) => ocioStats.stats(yearOf(req), req.query.type || null)));
+  // Resumen anual ("Wrapped"): todo de una vez.
+  app.get("/api/ocio/wrapped", handle((req) => ocioStats.wrapped(yearOf(req))));
 
   app.get("/api/ocio/library", handle((req) => lib.list(req.query)));
 
