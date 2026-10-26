@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { PageTransition } from "../../components/common/PageTransition.jsx";
 import { QuickExpenseForm } from "../../components/expenses/QuickExpenseForm.jsx";
@@ -7,6 +7,7 @@ import { KpiStrip } from "../../components/expenses/resumen/KpiStrip.jsx";
 import { AlertBanner, DISMISSED_ALERTS_SETTING_KEY, parseDismissed, withDismissed } from "../../components/expenses/resumen/AlertBanner.jsx";
 import { MovementsList } from "../../components/expenses/resumen/MovementsList.jsx";
 import { InstallmentsPanel } from "../../components/expenses/resumen/InstallmentsPanel.jsx";
+import { OutingSuggestionToast } from "../../components/expenses/OutingSuggestionToast.jsx";
 import { buildInsights } from "../../lib/insights.js";
 import { inflationFromSettings } from "../../lib/finance.js";
 import { availablePeriods } from "../../lib/monthlyReport.js";
@@ -35,6 +36,9 @@ export function GastosHome() {
     []
   );
   const [params, setParams] = useSearchParams();
+  // Gasto recién cargado: Ocio pregunta si va con alguna salida de esos días.
+  const [justAdded, setJustAdded] = useState(null);
+  const closeSuggestion = useCallback(() => setJustAdded(null), []);
   const today = todayDateInputValue();
   const current = getBillingMonth(today);
   const requested = parseBillingMonthKey(params.get("periodo"));
@@ -73,6 +77,7 @@ export function GastosHome() {
   async function handleAdd(data) {
     const created = await api.addExpense(data);
     setExpenses((prev) => [created, ...(prev || [])]);
+    setJustAdded(created);
   }
 
   async function handleUpdate(id, data) {
@@ -117,6 +122,7 @@ export function GastosHome() {
           </div>
         </div>
       </div>
+      {justAdded && <OutingSuggestionToast key={justAdded.id} expense={justAdded} onClose={closeSuggestion} />}
     </PageTransition>
   );
 }

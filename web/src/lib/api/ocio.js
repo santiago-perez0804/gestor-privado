@@ -31,4 +31,11 @@ export const ocioApi = {
   addOuting: (data) => post("/outings", data),
   updateOuting: (id, data) => put(`/outings/${id}`, data),
   deleteOuting: (id) => del(`/outings/${id}`),
+  getOutingsSummary: (month) => get(`/outings/summary?${toQuery({ month })}`),
+  parseOuting: (text) => post("/outings/parse", { text }),
+  suggestOutingsForExpense: (params) => get(`/outings/suggest?${toQuery(params)}`),
+  getOutingExpenses: (id) => get(`/outings/${id}/expenses`),
+  getOutingCandidates: (id) => get(`/outings/${id}/expense-candidates`),
+  linkOutingExpense: (id, expenseId) => post(`/outings/${id}/expenses`, { expenseId }),
+  unlinkOutingExpense: (id, expenseId) => del(`/outings/${id}/expenses/${expenseId}`),
 };

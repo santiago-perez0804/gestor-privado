@@ -4,6 +4,9 @@
 import { db, nowIso } from "../db/index.js";
 import { OUTING_STATUSES, OUTING_CATEGORIES } from "../lib/ocio/constants.js";
 import { handle } from "../lib/http.js";
+import { createOutings } from "../services/ocio/outings.js";
+import { parseOuting } from "../lib/ocio/parseOuting.js";
+import { todayLocal } from "../services/ocio/library.js";
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME = /^\d{2}:\d{2}$/;
@@ -31,18 +34,44 @@ export function getOuting(id) {
 }
 
 export default function registerOutingsRoutes(app) {
+  const outings = createOutings(db);
+
+  // Con lo gastado en cada salida (gastos vinculados) y cuántos gastos tiene.
+  app.get("/api/outings", handle((req) => outings.list(req.query)));
+
+  // Números de la pantalla Salidas: ?month=YYYY-MM (por defecto el actual).
   app.get(
-    "/api/outings",
+    "/api/outings/summary",
     handle((req) => {
-      const { from, to, status } = req.query;
-      const clauses = ["deletedAt IS NULL"];
-      const params = [];
-      if (from) (clauses.push("date >= ?"), params.push(from));
-      if (to) (clauses.push("date <= ?"), params.push(to));
-      if (status) (clauses.push("status = ?"), params.push(status));
-      return db.prepare(`SELECT * FROM outings WHERE ${clauses.join(" AND ")} ORDER BY date, startTime`).all(...params);
+      const today = todayLocal();
+      const month = /^\d{4}-\d{2}$/.test(req.query.month || "") ? req.query.month : today.slice(0, 7);
+      return outings.summary({ month, today });
     })
   );
+
+  // Carga rápida en lenguaje natural: devuelve la vista previa, no guarda nada.
+  app.post("/api/outings/parse", handle((req) => parseOuting(String(req.body?.text || ""), todayLocal())));
+
+  // Para un gasto recién cargado (pantalla Finanzas): ¿va con alguna salida?
+  app.get(
+    "/api/outings/suggest",
+    handle((req) => {
+      const { date, title, description, expenseId } = req.query;
+      return outings.suggestForExpense({ date, title, description, expenseId: expenseId ? Number(expenseId) : null });
+    })
+  );
+
+  app.get("/api/outings/:id/expenses", handle((req) => outings.linked(Number(req.params.id))));
+  app.get(
+    "/api/outings/:id/expense-candidates",
+    handle((req) => {
+      const list = outings.candidates(Number(req.params.id));
+      if (!list) throw Object.assign(new Error("not_found"), { status: 404 });
+      return list;
+    })
+  );
+  app.post("/api/outings/:id/expenses", handle((req) => outings.link(Number(req.params.id), Number(req.body?.expenseId)), 201));
+  app.delete("/api/outings/:id/expenses/:expenseId", handle((req) => outings.unlink(Number(req.params.id), Number(req.params.expenseId))));
 
   app.post(
     "/api/outings",
