@@ -142,6 +142,30 @@ CREATE TABLE IF NOT EXISTS catalog_cache (
   fetchedAt TEXT NOT NULL
 );
 
+-- Google Calendar (una sola cuenta): token de actualización cifrado, calendario y estado de la
+-- sincronización. El token de acceso vive solo en memoria.
+CREATE TABLE IF NOT EXISTS google_account (
+  id INTEGER PRIMARY KEY CHECK(id = 1),
+  refreshTokenEnc TEXT,
+  email TEXT,
+  calendarId TEXT,
+  calendarName TEXT,
+  syncToken TEXT,
+  lastSyncAt TEXT,
+  lastError TEXT,
+  status TEXT NOT NULL DEFAULT 'disconnected' CHECK(status IN ('disconnected','connected','revoked','error')),
+  updatedAt TEXT NOT NULL
+);
+
+-- Registro simple de la sincronización (conflictos y errores), para revisar qué pasó.
+CREATE TABLE IF NOT EXISTS google_sync_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  at TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK(kind IN ('conflict','error','info')),
+  message TEXT NOT NULL,
+  outingId INTEGER
+);
+
 -- Salidas (forma nueva). En bases anteriores al rediseño, la migración ocioV2 reconstruye la tabla
 -- (y crea sus índices y el vínculo con gastos), porque SQLite no permite cambiar los CHECK.
 CREATE TABLE IF NOT EXISTS outings (

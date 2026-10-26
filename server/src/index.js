@@ -27,6 +27,8 @@ import registerBudgetsRoutes from "./routes/budgets.js";
 import registerExchangeRateRoutes, { fetchRates } from "./routes/exchangeRate.js";
 import registerOcioRoutes from "./routes/ocio.js";
 import registerCatalogRoutes from "./routes/catalog.js";
+import registerGoogleRoutes from "./routes/google.js";
+import { google } from "./services/google/index.js";
 import registerOutingsRoutes from "./routes/outings.js";
 import registerProjectsRoutes from "./routes/projects.js";
 import registerCertificatesRoutes from "./routes/certificates.js";
@@ -51,6 +53,7 @@ fetchRates()
   .catch(() => {});
 prefetchMarket();
 startInstagramSync();
+google().start();
 
 const app = express();
 app.use(cors());
@@ -77,6 +80,7 @@ registerBudgetsRoutes(app);
 registerExchangeRateRoutes(app);
 registerOcioRoutes(app);
 registerCatalogRoutes(app);
+registerGoogleRoutes(app);
 registerOutingsRoutes(app);
 registerProjectsRoutes(app);
 registerCertificatesRoutes(app);

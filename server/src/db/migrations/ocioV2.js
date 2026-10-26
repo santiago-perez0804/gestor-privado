@@ -109,6 +109,8 @@ function rebuildOutings(db, summary) {
 
 /** Índices y tablas que dependen de la forma nueva de `outings` (siempre, es idempotente). */
 function ensureOutingExtras(db) {
+  // Cuándo se sincronizó por última vez con Google (para saber si hay cambios locales sin subir).
+  if (!columns(db, "outings").includes("googleSyncedAt")) db.exec("ALTER TABLE outings ADD COLUMN googleSyncedAt TEXT");
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_outings_date ON outings(date);
     CREATE INDEX IF NOT EXISTS idx_outings_status ON outings(status);

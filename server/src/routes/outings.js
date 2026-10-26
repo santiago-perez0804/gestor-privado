@@ -7,6 +7,7 @@ import { handle } from "../lib/http.js";
 import { createOutings } from "../services/ocio/outings.js";
 import { parseOuting } from "../lib/ocio/parseOuting.js";
 import { todayLocal } from "../services/ocio/library.js";
+import { google } from "../services/google/index.js";
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME = /^\d{2}:\d{2}$/;
@@ -85,6 +86,7 @@ export default function registerOutingsRoutes(app) {
         )
         .run(o.title, o.category ?? null, o.date, o.startTime ?? null, o.endTime ?? null, o.allDay ?? 1, o.place ?? null, o.withWhom ?? null, o.notes ?? null, o.status ?? "tentative", o.icon ?? null, ts, ts)
         .lastInsertRowid;
+      google().scheduleSoon();
       return getOuting(id);
     }, 201)
   );
@@ -99,6 +101,7 @@ export default function registerOutingsRoutes(app) {
       db.prepare(
         `UPDATE outings SET title=?, category=?, date=?, startTime=?, endTime=?, allDay=?, place=?, withWhom=?, notes=?, status=?, icon=?, updatedAt=? WHERE id=?`
       ).run(merged.title, merged.category, merged.date, merged.startTime, merged.endTime, merged.allDay, merged.place, merged.withWhom, merged.notes, merged.status, merged.icon, nowIso(), existing.id);
+      google().scheduleSoon();
       return getOuting(existing.id);
     })
   );
@@ -110,6 +113,7 @@ export default function registerOutingsRoutes(app) {
       if (!existing) return;
       if (existing.googleEventId) db.prepare("UPDATE outings SET deletedAt = ?, updatedAt = ? WHERE id = ?").run(nowIso(), nowIso(), existing.id);
       else db.prepare("DELETE FROM outings WHERE id = ?").run(existing.id);
+      google().scheduleSoon();
     })
   );
 }

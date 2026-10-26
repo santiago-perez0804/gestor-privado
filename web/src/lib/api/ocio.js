@@ -26,6 +26,13 @@ export const ocioApi = {
   searchCatalog: (type, q, signal) => get(`/catalog/search?${toQuery({ type, q })}`, { signal }),
   getCatalogDetails: (type, source, id) => get(`/catalog/details?${toQuery({ type, source, id })}`),
 
+  // Google Calendar (OAuth y sincronización viven en el server)
+  getGoogleStatus: () => get("/google/status"),
+  syncGoogle: () => post("/google/sync", {}),
+  disconnectGoogle: () => post("/google/disconnect", {}),
+  getGoogleLog: () => get("/google/log"),
+  googleAuthUrl: "/api/google/auth",
+
   // salidas
   getOutings: (params) => get(`/outings?${toQuery(params)}`),
   addOuting: (data) => post("/outings", data),

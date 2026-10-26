@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { AlertTriangle, CalendarDays, Check, ChevronLeft, ChevronRight, Link2, Loader2, MapPin, Pencil, Plus, Sparkles, Trash2, Users, X } from "lucide-react";
+import { AlertTriangle, CalendarDays, Check, ChevronLeft, ChevronRight, Link2, Loader2, MapPin, Pencil, Plus, RefreshCw, Sparkles, Trash2, Users, X } from "lucide-react";
 import { PageTransition } from "../../components/common/PageTransition.jsx";
 import { PageBar } from "../../components/common/PageBar.jsx";
 import { OutingFormModal } from "../../components/ocio/OutingFormModal.jsx";
@@ -162,6 +162,7 @@ function MonthGrid({ month, outings, today, selectedId, onSelect, onNewOn }) {
                   >
                     <span className="inline-block rounded-full shrink-0" style={{ width: 6, height: 6, background: cat?.color ?? "var(--text-faint)" }} />
                     <span className="truncate">{o.title}</span>
+                    {o.source === "google" && <RefreshCw size={10} className="shrink-0 ml-auto" style={{ color: "var(--text-faint)" }} aria-label="Viene de Google Calendar" />}
                   </button>
                 );
               })}
@@ -430,6 +431,14 @@ export function OcioSalidas() {
 
   const [y, m] = month.split("-").map(Number);
   const monthName = cap(MONTHS_ES[m - 1]);
+  // Vuelta de la conexión con Google (?google=conectado|cancelado|error).
+  const googleResult = params.get("google");
+  const GOOGLE_MESSAGES = {
+    conectado: ["good", "Google Calendar quedó conectado. Tus salidas se copian al calendario «Salidas»."],
+    cancelado: ["warn", "No se conectó Google Calendar (cancelaste el permiso)."],
+    error: ["bad", `No se pudo conectar Google Calendar: ${params.get("motivo") || "error desconocido"}.`],
+  };
+  const googleNotice = GOOGLE_MESSAGES[googleResult];
 
   return (
     <PageTransition>
@@ -440,6 +449,15 @@ export function OcioSalidas() {
           Nueva salida
         </button>
       </PageBar>
+
+      {googleNotice && (
+        <div className="flex items-center gap-3 rounded-xl px-4 py-2.5 mb-4 lg:mx-7 lg:mt-4 lg:mb-0 text-sm" style={{ background: `color-mix(in srgb, var(--status-${googleNotice[0] === "good" ? "good" : googleNotice[0] === "warn" ? "warning" : "critical"}) 10%, transparent)` }}>
+          <span className="flex-1">{googleNotice[1]}</span>
+          <button onClick={() => (setParam("google", ""), setParam("motivo", ""))} aria-label="Cerrar aviso" className="hover-surface w-7 h-7 flex items-center justify-center">
+            <X size={14} />
+          </button>
+        </div>
+      )}
 
       {s && (
         <section aria-label="Números de salidas" className="grid gap-3 grid-cols-2 xl:grid-cols-4 lg:gap-0 lg:border-b mb-4 lg:mb-0 lg:[&>*]:border-r xl:[&>*:last-child]:border-r-0 lg:max-xl:[&>*:nth-child(-n+2)]:border-b">
