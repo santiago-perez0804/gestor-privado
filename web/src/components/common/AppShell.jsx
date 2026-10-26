@@ -81,7 +81,7 @@ function SidebarNav({ module, badges }) {
                   >
                     {({ isActive }) => (
                       <>
-                        <item.icon size={16} style={{ color: isActive ? "var(--accent)" : undefined }} className="shrink-0" />
+                        <item.icon size={16} style={{ color: item.color ?? (isActive ? "var(--accent)" : undefined) }} className="shrink-0" />
                         <span className="flex-1 truncate">{item.label}</span>
                         {item.badge && badges[item.badge] > 0 && (
                           <span className="text-[10px] font-mono font-semibold rounded-md px-1.5 py-0.5" style={{ background: "var(--surface-alt)", color: "var(--text-muted)" }}>

@@ -5,7 +5,7 @@ import cors from "cors";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { existsSync } from "node:fs";
-import { db, photosDir, certificatesDir } from "./db/index.js";
+import { db, photosDir, certificatesDir, coversDir, artworksDir } from "./db/index.js";
 import { seedExerciseLibrary } from "./db/seedExerciseLibrary.js";
 import { generateDueRecurringExpenses, generateDueRecurringIncomes } from "./services/recurringExpenses.js";
 import { startDailyBackups } from "./services/backup.js";
@@ -25,7 +25,7 @@ import registerExpensesRoutes from "./routes/expenses.js";
 import registerRecurringExpensesRoutes from "./routes/recurringExpenses.js";
 import registerBudgetsRoutes from "./routes/budgets.js";
 import registerExchangeRateRoutes, { fetchRates } from "./routes/exchangeRate.js";
-import registerMediaItemsRoutes from "./routes/mediaItems.js";
+import registerOcioRoutes from "./routes/ocio.js";
 import registerOutingsRoutes from "./routes/outings.js";
 import registerProjectsRoutes from "./routes/projects.js";
 import registerCertificatesRoutes from "./routes/certificates.js";
@@ -57,6 +57,9 @@ app.use(express.json());
 app.use(basicAuth);
 app.use("/photos", express.static(photosDir));
 app.use("/certificates", express.static(certificatesDir));
+// Portadas y galería: archivos que no cambian (el nombre incluye el id), se pueden cachear fuerte.
+app.use("/covers", express.static(coversDir, { maxAge: "30d", immutable: true }));
+app.use("/artworks", express.static(artworksDir, { maxAge: "30d" }));
 
 registerWeightsRoutes(app);
 registerSettingsRoutes(app);
@@ -71,7 +74,7 @@ registerExpensesRoutes(app);
 registerRecurringExpensesRoutes(app);
 registerBudgetsRoutes(app);
 registerExchangeRateRoutes(app);
-registerMediaItemsRoutes(app);
+registerOcioRoutes(app);
 registerOutingsRoutes(app);
 registerProjectsRoutes(app);
 registerCertificatesRoutes(app);
@@ -87,7 +90,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const webDistPath = join(__dirname, "..", "..", "web", "dist");
 if (existsSync(webDistPath)) {
   app.use(express.static(webDistPath));
-  app.get(/^(?!\/api|\/photos|\/certificates).*/, (req, res) => {
+  app.get(/^(?!\/api|\/photos|\/certificates|\/covers|\/artworks).*/, (req, res) => {
     res.sendFile(join(webDistPath, "index.html"));
   });
 }

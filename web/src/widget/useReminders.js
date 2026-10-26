@@ -38,7 +38,7 @@ async function collect() {
     api.getExpenses(),
     api.getBudgets(),
     api.getOutings(),
-    api.getMediaItems(),
+    api.getLibrary().catch(() => []),
     api.getIncomes(),
     api.getRecurringExpenses().catch(() => []),
     api.getSettings().catch(() => ({})),
@@ -117,9 +117,10 @@ async function collect() {
   }
 
   for (const o of outings) {
-    if (o.status !== "planeado") continue;
-    if (o.plannedDate === today) reminders.push({ key: `outing-${o.id}`, text: `¡Hoy tenés: ${o.title}!`, action: "ocio" });
-    else if (o.plannedDate === tomorrow) reminders.push({ key: `outing-${o.id}`, text: `Mañana tenés: ${o.title}.`, action: "ocio" });
+    if (o.status !== "confirmed" && o.status !== "tentative") continue;
+    const at = o.startTime ? ` a las ${o.startTime}` : "";
+    if (o.date === today) reminders.push({ key: `outing-${o.id}`, text: `¡Hoy tenés: ${o.title}${at}!`, action: "ocio" });
+    else if (o.date === tomorrow) reminders.push({ key: `outing-${o.id}`, text: `Mañana tenés: ${o.title}${at}.`, action: "ocio" });
   }
 
   // Hábitos: qué tan bien venís cuidándote. Alimenta la salud del sapo.

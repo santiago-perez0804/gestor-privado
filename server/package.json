@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "node --watch src/index.js",
     "start": "node src/index.js",
-    "test": "node --test \"test/*.test.js\""
+    "test": "node --test \"test/*.test.js\"",
+    "migrate:ocio": "node src/db/migrations/runOcioV2.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

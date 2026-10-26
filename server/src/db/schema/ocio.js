@@ -1,4 +1,13 @@
+// Ocio. Modelo:
+//   works            una obra (película, serie, libro, juego): datos de catálogo, iguales para todos
+//   library_entries  tu relación con esa obra (una por obra): estado, puntuación, prioridad, formato
+//   passes           cada vez que la leíste / viste / jugaste (relecturas = varias pasadas)
+//   reviews          reseñas (de una pasada) · highlights: subrayados y notas
+//   reading_sessions sesiones de lectura (KOReader o a mano): base de las estadísticas
+//   artworks         galería · ocio_goals: metas anuales · outings: salidas (+ vínculo con gastos)
+// Fechas: YYYY-MM-DD (o ISO completo en timestamps). Listas y metadatos: JSON en TEXT.
 export const ocioSchema = `
+-- Legado (antes del rediseño). Se conserva intacta como respaldo; la migración ocioV2 copia sus datos.
 CREATE TABLE IF NOT EXISTS media_items (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   type TEXT NOT NULL CHECK(type IN ('pelicula','serie','libro','videojuego')),
@@ -16,21 +25,137 @@ CREATE TABLE IF NOT EXISTS media_items (
   updatedAt TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS outings (
+CREATE TABLE IF NOT EXISTS works (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  type TEXT NOT NULL CHECK(type IN ('movie','series','book','game')),
+  title TEXT NOT NULL,
+  originalTitle TEXT,
+  creators TEXT NOT NULL DEFAULT '[]',
+  year INTEGER,
+  genres TEXT NOT NULL DEFAULT '[]',
+  coverUrl TEXT,
+  coverPath TEXT,
+  externalSource TEXT,
+  externalId TEXT,
+  metadata TEXT NOT NULL DEFAULT '{}',
+  createdAt TEXT NOT NULL,
+  updatedAt TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_works_external ON works(externalSource, externalId) WHERE externalId IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_works_type ON works(type);
+
+CREATE TABLE IF NOT EXISTS library_entries (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  workId INTEGER NOT NULL UNIQUE REFERENCES works(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'want' CHECK(status IN ('want','in_progress','done','dropped')),
+  rating REAL CHECK(rating IS NULL OR (rating BETWEEN 0.5 AND 5 AND rating * 2 = CAST(rating * 2 AS INTEGER))),
+  priority INTEGER CHECK(priority IS NULL OR priority BETWEEN 1 AND 3),
+  recommendedBy TEXT,
+  format TEXT,
+  notes TEXT,
+  legacyMediaItemId INTEGER UNIQUE,
+  createdAt TEXT NOT NULL,
+  updatedAt TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_library_entries_status ON library_entries(status);
+
+CREATE TABLE IF NOT EXISTS passes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  entryId INTEGER NOT NULL REFERENCES library_entries(id) ON DELETE CASCADE,
+  number INTEGER NOT NULL DEFAULT 1,
+  status TEXT NOT NULL DEFAULT 'in_progress' CHECK(status IN ('in_progress','done','dropped')),
+  startedAt TEXT,
+  finishedAt TEXT,
+  progress TEXT NOT NULL DEFAULT '{}',
+  dropReason TEXT,
+  createdAt TEXT NOT NULL,
+  updatedAt TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_passes_entry ON passes(entryId);
+CREATE INDEX IF NOT EXISTS idx_passes_finishedAt ON passes(finishedAt);
+
+CREATE TABLE IF NOT EXISTS reviews (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  entryId INTEGER NOT NULL REFERENCES library_entries(id) ON DELETE CASCADE,
+  passId INTEGER REFERENCES passes(id) ON DELETE SET NULL,
+  text TEXT NOT NULL,
+  hasSpoilers INTEGER NOT NULL DEFAULT 0,
+  createdAt TEXT NOT NULL,
+  updatedAt TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_reviews_entry ON reviews(entryId);
+
+CREATE TABLE IF NOT EXISTS highlights (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  workId INTEGER NOT NULL REFERENCES works(id) ON DELETE CASCADE,
+  text TEXT NOT NULL,
+  location TEXT,
+  note TEXT,
+  source TEXT NOT NULL DEFAULT 'manual',
+  createdAt TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_highlights_work ON highlights(workId);
+
+CREATE TABLE IF NOT EXISTS reading_sessions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  workId INTEGER NOT NULL REFERENCES works(id) ON DELETE CASCADE,
+  startTime TEXT NOT NULL,
+  durationSeconds INTEGER NOT NULL,
+  pagesRead INTEGER NOT NULL DEFAULT 0,
+  source TEXT NOT NULL DEFAULT 'manual' CHECK(source IN ('koreader','manual')),
+  externalKey TEXT UNIQUE,
+  createdAt TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_reading_sessions_work ON reading_sessions(workId, startTime);
+CREATE INDEX IF NOT EXISTS idx_reading_sessions_start ON reading_sessions(startTime);
+
+CREATE TABLE IF NOT EXISTS artworks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   title TEXT NOT NULL,
-  category TEXT,
-  plannedDate TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'planeado' CHECK(status IN ('planeado','hecho','cancelado')),
-  location TEXT,
-  notes TEXT,
-  icon TEXT,
+  technique TEXT,
+  sizeLabel TEXT,
+  createdOn TEXT,
+  description TEXT,
+  inventoryCode TEXT UNIQUE,
+  imagePath TEXT NOT NULL,
+  thumbPath TEXT,
+  width INTEGER,
+  height INTEGER,
+  mime TEXT,
+  isFavorite INTEGER NOT NULL DEFAULT 0,
+  showOnEasel INTEGER NOT NULL DEFAULT 1,
   createdAt TEXT NOT NULL,
   updatedAt TEXT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_media_items_type ON media_items(type);
-CREATE INDEX IF NOT EXISTS idx_media_items_status ON media_items(status);
-CREATE INDEX IF NOT EXISTS idx_outings_plannedDate ON outings(plannedDate);
-CREATE INDEX IF NOT EXISTS idx_outings_status ON outings(status);
+CREATE TABLE IF NOT EXISTS ocio_goals (
+  year INTEGER NOT NULL,
+  type TEXT NOT NULL CHECK(type IN ('movie','series','book','game','outing')),
+  target INTEGER NOT NULL CHECK(target > 0),
+  PRIMARY KEY (year, type)
+);
+
+-- Salidas (forma nueva). En bases anteriores al rediseño, la migración ocioV2 reconstruye la tabla
+-- (y crea sus índices y el vínculo con gastos), porque SQLite no permite cambiar los CHECK.
+CREATE TABLE IF NOT EXISTS outings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  title TEXT NOT NULL,
+  category TEXT,
+  date TEXT NOT NULL,
+  startTime TEXT,
+  endTime TEXT,
+  allDay INTEGER NOT NULL DEFAULT 1,
+  place TEXT,
+  withWhom TEXT,
+  notes TEXT,
+  status TEXT NOT NULL DEFAULT 'tentative' CHECK(status IN ('tentative','confirmed','attended','not_attended')),
+  icon TEXT,
+  source TEXT NOT NULL DEFAULT 'app' CHECK(source IN ('app','google')),
+  googleEventId TEXT UNIQUE,
+  googleEtag TEXT,
+  googleUpdated TEXT,
+  deletedAt TEXT,
+  createdAt TEXT NOT NULL,
+  updatedAt TEXT NOT NULL
+);
 `;

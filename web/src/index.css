@@ -33,6 +33,12 @@
   --status-good: #0ca30c;
   --status-warning: #fab219;
   --status-critical: #d03b3b;
+
+  /* Ocio: color de cada tipo de obra */
+  --ocio-movie: #d4533f;
+  --ocio-series: #6b55d6;
+  --ocio-book: #2a78d6;
+  --ocio-game: #b07a00;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -62,6 +68,11 @@
     --chart-cat-6: #008300;
     --chart-cat-7: #9085e9;
     --chart-cat-8: #e66767;
+
+    --ocio-movie: #e8705f;
+    --ocio-series: #9b87f5;
+    --ocio-book: #6ea8fe;
+    --ocio-game: #d4a23c;
   }
 }
 
@@ -91,6 +102,11 @@
   --chart-cat-6: #008300;
   --chart-cat-7: #9085e9;
   --chart-cat-8: #e66767;
+
+  --ocio-movie: #e8705f;
+  --ocio-series: #9b87f5;
+  --ocio-book: #6ea8fe;
+  --ocio-game: #d4a23c;
 }
 
 * {
@@ -170,6 +186,15 @@ input:disabled {
    ningún cambio visual al pasar el mouse. El foco con teclado se sigue viendo (outline global). */
 .ghost-action {
   border-radius: 0.5rem;
+}
+
+/* Tarjetas clickeables (obras, salidas): se marcan apenas al pasar el mouse, sin cambiar su forma. */
+.card-hover {
+  transition: background-color 0.12s, border-color 0.12s;
+}
+.card-hover:hover {
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+  border-color: color-mix(in srgb, var(--text) 18%, transparent) !important;
 }
 
 /* Botones de ícono y opciones de menú: fondo suave al pasar el mouse, que ahí es lo esperable. */

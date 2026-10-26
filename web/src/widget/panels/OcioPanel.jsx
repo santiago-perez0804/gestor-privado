@@ -2,9 +2,8 @@ import { Popcorn } from "lucide-react";
 import { useApi } from "../../hooks/useApi.js";
 import { api } from "../../lib/api.js";
 import { formatShortDate, todayDateInputValue } from "../../lib/format.js";
+import { WORK_TYPES, progressText } from "../../lib/ocio/types.js";
 import { PanelShell, Row } from "./PanelShell.jsx";
-
-const TYPE_LABEL = { pelicula: "Película", serie: "Serie", libro: "Libro", videojuego: "Juego" };
 
 function SubHeading({ children }) {
   return (
@@ -22,25 +21,18 @@ function Muted({ children }) {
   );
 }
 
-function progressText(m) {
-  if (m.progressCurrent == null) return TYPE_LABEL[m.type];
-  const label = m.progressLabel ? `${m.progressLabel} ` : "";
-  const total = m.progressTotal ? `/${m.progressTotal}` : "";
-  return `${label}${m.progressCurrent}${total}`;
-}
-
 export function OcioPanel({ onClose, onBack }) {
-  const { data, loading, error } = useApi(() => Promise.all([api.getOutings(), api.getMediaItems()]), []);
+  const { data, loading, error } = useApi(() => Promise.all([api.getOutings(), api.getLibrary({ status: "in_progress" })]), []);
 
   let body = null;
   if (data) {
     const [outings, media] = data;
     const today = todayDateInputValue();
     const upcoming = outings
-      .filter((o) => o.plannedDate >= today && o.status === "planeado")
-      .sort((a, b) => a.plannedDate.localeCompare(b.plannedDate))
+      .filter((o) => o.date >= today && (o.status === "confirmed" || o.status === "tentative"))
+      .sort((a, b) => a.date.localeCompare(b.date))
       .slice(0, 3);
-    const inProgress = media.filter((m) => m.status === "en_progreso").slice(0, 4);
+    const inProgress = media.slice(0, 4);
 
     body = (
       <>
@@ -50,7 +42,7 @@ export function OcioPanel({ onClose, onBack }) {
             <Muted>Nada planeado. ¿Organizamos algo?</Muted>
           ) : (
             upcoming.map((o) => (
-              <Row key={o.id} right={o.plannedDate === today ? "hoy" : formatShortDate(o.plannedDate)}>
+              <Row key={o.id} right={o.date === today ? "hoy" : formatShortDate(o.date)}>
                 {o.title}
               </Row>
             ))
@@ -62,7 +54,7 @@ export function OcioPanel({ onClose, onBack }) {
             <Muted>No estás viendo, leyendo ni jugando nada.</Muted>
           ) : (
             inProgress.map((m) => (
-              <Row key={m.id} right={progressText(m)}>
+              <Row key={m.id} right={progressText(m.currentPass?.progress, m.type) ?? WORK_TYPES[m.type].label}>
                 {m.title}
               </Row>
             ))

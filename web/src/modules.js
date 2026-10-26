@@ -1,5 +1,10 @@
 import {
   Award,
+  BookOpen,
+  CalendarDays,
+  Gamepad2,
+  Library,
+  Tv,
   Banknote,
   CalendarClock,
   Camera,
@@ -12,7 +17,6 @@ import {
   LayoutDashboard,
   Lightbulb,
   LineChart,
-  MapPin,
   PieChart,
   Popcorn,
   Repeat,
@@ -91,12 +95,20 @@ export const MODULES = [
     icon: Popcorn,
     basePath: "/ocio",
     nav: [
+      { items: [{ to: "/ocio", label: "Inicio", icon: LayoutDashboard, end: true }] },
       {
+        label: "Biblioteca",
         items: [
-          { to: "/ocio", label: "Inicio", icon: LayoutDashboard, end: true },
-          { to: "/ocio/medios", label: "Medios", icon: Clapperboard },
-          { to: "/ocio/salidas", label: "Salidas", icon: MapPin },
+          { to: "/ocio/biblioteca", label: "Todo", icon: Library, end: true, badge: "all" },
+          { to: "/ocio/biblioteca/peliculas", label: "Películas", icon: Clapperboard, color: "var(--ocio-movie)", badge: "movie" },
+          { to: "/ocio/biblioteca/series", label: "Series", icon: Tv, color: "var(--ocio-series)", badge: "series" },
+          { to: "/ocio/biblioteca/libros", label: "Libros", icon: BookOpen, color: "var(--ocio-book)", badge: "book" },
+          { to: "/ocio/biblioteca/videojuegos", label: "Videojuegos", icon: Gamepad2, color: "var(--ocio-game)", badge: "game" },
         ],
+      },
+      {
+        label: "Agenda",
+        items: [{ to: "/ocio/salidas", label: "Salidas", icon: CalendarDays, badge: "outings" }],
       },
     ],
   },

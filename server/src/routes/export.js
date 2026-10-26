@@ -22,8 +22,18 @@ export default function registerExportRoutes(app) {
       accountSnapshots: db.prepare("SELECT * FROM account_snapshots ORDER BY date ASC").all(),
       debts: db.prepare("SELECT * FROM debts ORDER BY id ASC").all(),
       savingsContributions: db.prepare("SELECT * FROM savings_contributions ORDER BY date ASC").all(),
-      mediaItems: db.prepare("SELECT * FROM media_items ORDER BY id ASC").all(),
-      outings: db.prepare("SELECT * FROM outings ORDER BY plannedDate ASC").all(),
+      // Ocio (modelo nuevo). media_items queda como respaldo del modelo anterior.
+      mediaItemsLegacy: db.prepare("SELECT * FROM media_items ORDER BY id ASC").all(),
+      works: db.prepare("SELECT * FROM works ORDER BY id ASC").all(),
+      libraryEntries: db.prepare("SELECT * FROM library_entries ORDER BY id ASC").all(),
+      passes: db.prepare("SELECT * FROM passes ORDER BY id ASC").all(),
+      reviews: db.prepare("SELECT * FROM reviews ORDER BY id ASC").all(),
+      highlights: db.prepare("SELECT * FROM highlights ORDER BY id ASC").all(),
+      readingSessions: db.prepare("SELECT * FROM reading_sessions ORDER BY startTime ASC").all(),
+      artworks: db.prepare("SELECT * FROM artworks ORDER BY id ASC").all(),
+      ocioGoals: db.prepare("SELECT * FROM ocio_goals").all(),
+      outings: db.prepare("SELECT * FROM outings ORDER BY date ASC").all(),
+      outingExpenses: db.prepare("SELECT * FROM outing_expenses").all(),
       // El token de Instagram queda fuera del export a propósito.
       projects: db
         .prepare("SELECT * FROM projects ORDER BY id ASC")

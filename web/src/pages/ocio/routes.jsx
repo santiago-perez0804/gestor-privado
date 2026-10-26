@@ -1,10 +1,18 @@
-import { Route } from "react-router-dom";
-import { OcioHome } from "./OcioHome.jsx";
-import { OcioMedios } from "./OcioMedios.jsx";
+import { Navigate, Route } from "react-router-dom";
+import { OcioLayout } from "./OcioLayout.jsx";
+import { OcioInicio } from "./OcioInicio.jsx";
+import { Biblioteca } from "./Biblioteca.jsx";
+import { ObraDetalle } from "./ObraDetalle.jsx";
 import { OcioSalidas } from "./OcioSalidas.jsx";
 
 export const ocioRoutes = [
-  <Route key="ocio-home" path="/ocio" element={<OcioHome />} />,
-  <Route key="ocio-medios" path="/ocio/medios" element={<OcioMedios />} />,
-  <Route key="ocio-salidas" path="/ocio/salidas" element={<OcioSalidas />} />,
+  <Route key="ocio" path="/ocio" element={<OcioLayout />}>
+    <Route index element={<OcioInicio />} />
+    <Route path="biblioteca" element={<Biblioteca />} />
+    <Route path="biblioteca/:slug" element={<Biblioteca />} />
+    <Route path="obra/:id" element={<ObraDetalle />} />
+    <Route path="salidas" element={<OcioSalidas />} />
+    {/* Ruta vieja (antes del rediseño) */}
+    <Route path="medios" element={<Navigate to="/ocio/biblioteca" replace />} />
+  </Route>,
 ];

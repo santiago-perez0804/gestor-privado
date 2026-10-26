@@ -12,10 +12,11 @@ import { proyectosRoutes } from "./pages/proyectos/routes.jsx";
 export default function App() {
   const { pathname } = useLocation();
   // En pantalla grande la barra lateral (AppShell) reemplaza la barra de arriba y la de abajo.
-  // Finanzas usa todo el ancho (y el Resumen todo el alto); los demás módulos mantienen su columna.
-  const finanzas = pathname.startsWith("/gastos");
+  // Finanzas y Ocio usan todo el ancho (el Resumen de Finanzas, todo el alto); los demás módulos
+  // mantienen su columna angosta.
+  const wide = pathname.startsWith("/gastos") || pathname.startsWith("/ocio");
   const finanzasHome = pathname === "/gastos" || pathname === "/gastos/";
-  const desktop = finanzas ? `lg:max-w-none lg:p-0 ${finanzasHome ? "lg:h-full" : ""}` : "lg:py-8";
+  const desktop = wide ? `lg:max-w-none lg:p-0 ${finanzasHome ? "lg:h-full" : ""}` : "lg:py-8";
   return (
     <div className="min-h-screen print:min-h-0" style={{ background: "var(--bg)" }}>
       <AppShell>

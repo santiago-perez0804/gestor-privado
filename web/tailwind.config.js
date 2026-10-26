@@ -5,6 +5,8 @@ export default {
     extend: {
       // Bordes sin color explícito usan el del tema (claro u oscuro).
       borderColor: { DEFAULT: "var(--border)" },
+      // Títulos de obras y reseñas (Ocio). Sin red, cae en Georgia.
+      fontFamily: { serif: ['"Newsreader"', "Georgia", "serif"] },
     },
   },
   plugins: [],
