@@ -21,6 +21,11 @@ export const ocioApi = {
   getOcioGoals: (year) => get(`/ocio/goals/${year}`),
   setOcioGoal: (year, type, target) => put(`/ocio/goals/${year}/${type}`, { target }),
 
+  // catálogos externos (TMDB, Open Library, Google Books, RAWG) vía el server
+  getCatalogStatus: () => get("/catalog/status"),
+  searchCatalog: (type, q, signal) => get(`/catalog/search?${toQuery({ type, q })}`, { signal }),
+  getCatalogDetails: (type, source, id) => get(`/catalog/details?${toQuery({ type, source, id })}`),
+
   // salidas
   getOutings: (params) => get(`/outings?${toQuery(params)}`),
   addOuting: (data) => post("/outings", data),

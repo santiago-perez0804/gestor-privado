@@ -1,5 +1,6 @@
 // API de la biblioteca de Ocio (obras, entradas, pasadas, reseñas, subrayados, metas) e Inicio.
-import { db } from "../db/index.js";
+import { db, coversDir } from "../db/index.js";
+import { downloadCover } from "../services/catalog/covers.js";
 import { createLibrary, todayLocal } from "../services/ocio/library.js";
 import { buildHome, sidebarCounts } from "../services/ocio/home.js";
 import { GENRES } from "../lib/ocio/genres.js";
@@ -9,6 +10,14 @@ const notFound = () => Object.assign(new Error("not_found"), { status: 404 });
 
 export default function registerOcioRoutes(app) {
   const lib = createLibrary(db);
+
+  /** Baja la portada remota a data/covers en segundo plano (si falla, queda la URL del catálogo). */
+  function cacheCover(item) {
+    if (!item?.cover || item.cover.startsWith("/covers/")) return;
+    downloadCover(item.cover, item.workId, coversDir)
+      .then((name) => name && lib.updateWork(item.workId, { coverPath: name }))
+      .catch((err) => console.warn(`[ocio] no se pudo bajar la portada de "${item.title}": ${err.message}`));
+  }
 
   app.get("/api/ocio/genres", handle(() => GENRES));
 
@@ -29,8 +38,10 @@ export default function registerOcioRoutes(app) {
   app.get(
     "/api/ocio/library/duplicate",
     handle((req) => {
-      const { type, title, year, externalSource, externalId } = req.query;
-      return { item: lib.findDuplicate({ type, title, year: year ? Number(year) : null, externalSource, externalId }) };
+      const { type, title, originalTitle, creators, year, externalSource, externalId } = req.query;
+      return {
+        item: lib.findDuplicate({ type, title, originalTitle, creators: creators ? String(creators).split("|") : [], year: year ? Number(year) : null, externalSource, externalId }),
+      };
     })
   );
 
@@ -45,12 +56,20 @@ export default function registerOcioRoutes(app) {
 
   app.post(
     "/api/ocio/library",
-    handle((req) => lib.add(req.body), 201)
+    handle((req) => {
+      const out = lib.add(req.body);
+      cacheCover(out.item);
+      return out;
+    }, 201)
   );
 
   app.put(
     "/api/ocio/library/:id",
-    handle((req) => lib.updateEntry(Number(req.params.id), req.body))
+    handle((req) => {
+      const item = lib.updateEntry(Number(req.params.id), req.body);
+      if (req.body?.work?.coverUrl) cacheCover(item);
+      return item;
+    })
   );
 
   app.delete(

@@ -112,3 +112,11 @@ test("metas anuales", () => {
   assert.deepEqual(lib.setGoal(2026, "book", 6), [{ type: "book", target: 6 }]);
   assert.deepEqual(lib.setGoal(2026, "book", 0), []);
 });
+
+test("duplicados por título: el original cuenta y un homónimo de otro autor no", () => {
+  const { lib } = freshLibrary();
+  const { item } = lib.add({ work: { type: "book", title: "Un mundo feliz", creators: ["Aldous Huxley"] } });
+  assert.equal(lib.findDuplicate({ type: "book", title: "Brave New World", originalTitle: "Un mundo feliz", creators: ["Aldous Huxley"] })?.id, item.id);
+  assert.equal(lib.findDuplicate({ type: "book", title: "Un mundo feliz", creators: ["Manuel Aguirre"] }), null, "otro autor: es otro libro");
+  assert.equal(lib.findDuplicate({ type: "book", title: "Un mundo feliz" })?.match, "title");
+});

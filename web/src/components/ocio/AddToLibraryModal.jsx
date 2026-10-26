@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, Info, Loader2, Plus, X } from "lucide-react";
+import { ArrowLeft, Check, Info, Loader2, Pencil, Plus, X } from "lucide-react";
 import { Modal } from "../common/Modal.jsx";
 import { DateField } from "../common/DateField.jsx";
 import { WorkCover } from "./WorkCover.jsx";
 import { Stars } from "./Stars.jsx";
 import { TypeLabel } from "./bits.jsx";
+import { CatalogSearch } from "./CatalogSearch.jsx";
 import { useOcio } from "../../pages/ocio/OcioContext.jsx";
 import { api } from "../../lib/api.js";
 import { todayDateInputValue } from "../../lib/format.js";
@@ -24,7 +25,7 @@ const EXTRA = {
   game: { key: "platforms", label: "Plataformas", placeholder: "PC, Switch…" },
 };
 
-export const emptyDraft = () => ({ title: "", creators: "", year: "", genres: [], extra: "", cover: null, externalSource: null, externalId: null, metadata: {} });
+export const emptyDraft = () => ({ title: "", originalTitle: null, creators: "", year: "", genres: [], extra: "", cover: null, externalSource: null, externalId: null, metadata: {} });
 
 /** Borrador de obra (lo que se edita) → objeto `work` para la API. */
 export function draftToWork(type, d) {
@@ -34,6 +35,7 @@ export function draftToWork(type, d) {
   return {
     type,
     title: d.title.trim(),
+    originalTitle: d.originalTitle || null,
     creators: d.creators.split(",").map((s) => s.trim()).filter(Boolean),
     year: d.year ? Number(d.year) : null,
     genres: d.genres,
@@ -116,12 +118,14 @@ export function ManualWorkFields({ type, draft, onChange }) {
 }
 
 /**
- * Agregar a la biblioteca. A la izquierda, los datos de la obra (a mano; la búsqueda en catálogos
- * se suma en `leftPane`); a la derecha, tu relación con ella: estado, fecha, puntuación y reseña.
+ * Agregar a la biblioteca. A la izquierda se busca la obra en el catálogo (o se carga a mano); a la
+ * derecha, tu relación con ella: estado, fecha, puntuación y reseña.
  */
-export function AddToLibraryModal({ initialType = "movie", onClose, onSaved, leftPane }) {
+export function AddToLibraryModal({ initialType = "movie", onClose, onSaved }) {
+  const { genreLabel } = useOcio();
   const [type, setType] = useState(initialType);
   const [draft, setDraft] = useState(emptyDraft);
+  const [mode, setMode] = useState("search"); // search | manual
   const [status, setStatus] = useState("want");
   const [date, setDate] = useState(todayDateInputValue());
   const [rating, setRating] = useState(null);
@@ -142,17 +146,24 @@ export function AddToLibraryModal({ initialType = "movie", onClose, onSaved, lef
     if (!choices.includes(status)) setStatus("want");
   }, [choices, status]);
 
+  // Otro tipo de obra: se empieza de cero con el buscador.
+  useEffect(() => {
+    setDraft(emptyDraft());
+    setMode("search");
+  }, [type]);
+
   // ¿Ya está en la biblioteca? Se consulta con una pausa corta mientras se escribe.
   useEffect(() => {
     if (!work.title) return setDuplicate(null);
     const timer = setTimeout(() => {
       api
-        .findLibraryDuplicate({ type, title: work.title, year: work.year, externalSource: work.externalSource, externalId: work.externalId })
+        .findLibraryDuplicate({ type, title: work.title, originalTitle: work.originalTitle, creators: work.creators.join("|"), year: work.year, externalSource: work.externalSource, externalId: work.externalId })
         .then((r) => setDuplicate(r.item))
         .catch(() => setDuplicate(null));
     }, 300);
     return () => clearTimeout(timer);
-  }, [type, work.title, work.year, work.externalSource, work.externalId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [type, work.title, work.originalTitle, work.creators.join("|"), work.year, work.externalSource, work.externalId]);
 
   async function save() {
     if (!work.title) return setError("Falta el título.");
@@ -174,6 +185,7 @@ export function AddToLibraryModal({ initialType = "movie", onClose, onSaved, lef
       onSaved?.();
       if (another) {
         setDraft(emptyDraft());
+        setMode("search");
         setRating(null);
         setReview("");
         setSpoilers(false);
@@ -217,7 +229,28 @@ export function AddToLibraryModal({ initialType = "movie", onClose, onSaved, lef
       </div>
 
       <div className="grid md:grid-cols-2">
-        <div className="p-5 sm:p-6 md:border-r min-w-0">{leftPane ? leftPane({ type, draft, setDraft }) : <ManualWorkFields type={type} draft={draft} onChange={setDraft} />}</div>
+        <div className="p-5 sm:p-6 md:border-r min-w-0 flex flex-col">
+          {mode === "search" ? (
+            <CatalogSearch
+              key={type}
+              type={type}
+              selectedId={draft.externalId ? `${draft.externalSource}:${draft.externalId}` : null}
+              onSelect={(d) => setDraft(d)}
+              onManual={(q) => {
+                setDraft((d) => (d.externalId ? { ...emptyDraft(), title: q } : { ...d, title: d.title || q }));
+                setMode("manual");
+              }}
+            />
+          ) : (
+            <>
+              <ManualWorkFields type={type} draft={draft} onChange={setDraft} />
+              <button type="button" onClick={() => setMode("search")} className="ghost-action self-start flex items-center gap-1.5 text-xs font-semibold mt-4 px-1.5 py-1 -mx-1.5" style={{ color: "var(--accent-strong)" }}>
+                <ArrowLeft size={13} />
+                Volver a buscar en el catálogo
+              </button>
+            </>
+          )}
+        </div>
 
         <div className="p-5 sm:p-6 min-w-0 flex flex-col gap-4">
           <div className="flex gap-4">
@@ -230,6 +263,21 @@ export function AddToLibraryModal({ initialType = "movie", onClose, onSaved, lef
               <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>
                 {[work.creators.join(", "), work.year].filter(Boolean).join(" · ")}
               </p>
+              {work.genres.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-2">
+                  {work.genres.map((g) => (
+                    <span key={g} className="text-[11px] rounded-full px-2 py-0.5" style={{ border: "1px solid var(--border)", color: "var(--text-muted)" }}>
+                      {genreLabel(g)}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {mode === "search" && draft.externalId && (
+                <button type="button" onClick={() => setMode("manual")} className="ghost-action flex items-center gap-1 text-[11px] font-semibold mt-2 px-1 py-0.5 -mx-1" style={{ color: "var(--accent-strong)" }}>
+                  <Pencil size={11} />
+                  Editar los datos
+                </button>
+              )}
             </div>
           </div>
 

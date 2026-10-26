@@ -112,24 +112,34 @@ export function createLibrary(db) {
   }
 
   /**
-   * ¿Ya está en la biblioteca? Por id externo o, si no hay, por tipo + título (normalizado) + año (±1).
-   * @returns {LibraryItem|null}
+   * ¿Ya está en la biblioteca? Por id externo (coincidencia segura) o por tipo + título normalizado
+   * (el original también cuenta) + año ±1 + algún autor en común si los dos tienen autores.
+   * @returns {LibraryItem|null} con `match`: "id" (segura) o "title" (probable)
    */
-  function findDuplicate({ type, title, year, externalSource, externalId }) {
+  function findDuplicate({ type, title, originalTitle, year, creators, externalSource, externalId }) {
     if (externalSource && externalId) {
       const w = q.byExternal.get(externalSource, String(externalId));
       if (w) {
         const e = q.entryByWork.get(w.id);
-        if (e) return item(e.id);
+        if (e) return { ...item(e.id), match: "id" };
       }
     }
-    const t = norm(title);
-    if (!t) return null;
-    const candidates = db.prepare("SELECT * FROM works WHERE type = ?").all(type);
-    const hit = candidates.find((w) => norm(w.title) === t || norm(w.originalTitle) === t ? !year || !w.year || Math.abs(w.year - year) <= 1 : false);
+    const titles = [norm(title), norm(originalTitle)].filter(Boolean);
+    if (!titles.length) return null;
+    const lastNames = (list) => new Set((list || []).map((c) => norm(c).split(" ").at(-1)).filter(Boolean));
+    const theirs = lastNames(creators);
+    const hit = db
+      .prepare("SELECT * FROM works WHERE type = ?")
+      .all(type)
+      .find((w) => {
+        if (!titles.includes(norm(w.title)) && !titles.includes(norm(w.originalTitle))) return false;
+        if (year && w.year && Math.abs(w.year - year) > 1) return false;
+        const ours = lastNames(parse(w.creators, []));
+        return !ours.size || !theirs.size || [...ours].some((n) => theirs.has(n));
+      });
     if (!hit) return null;
     const e = q.entryByWork.get(hit.id);
-    return e ? item(e.id) : null;
+    return e ? { ...item(e.id), match: "title" } : null;
   }
 
   function insertWork(work, ts) {

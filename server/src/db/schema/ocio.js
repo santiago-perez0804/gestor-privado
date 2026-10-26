@@ -135,6 +135,13 @@ CREATE TABLE IF NOT EXISTS ocio_goals (
   PRIMARY KEY (year, type)
 );
 
+-- Caché de catálogos externos (TMDB, Open Library, Google Books, RAWG): respuestas normalizadas.
+CREATE TABLE IF NOT EXISTS catalog_cache (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  fetchedAt TEXT NOT NULL
+);
+
 -- Salidas (forma nueva). En bases anteriores al rediseño, la migración ocioV2 reconstruye la tabla
 -- (y crea sus índices y el vínculo con gastos), porque SQLite no permite cambiar los CHECK.
 CREATE TABLE IF NOT EXISTS outings (

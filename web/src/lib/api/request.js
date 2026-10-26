@@ -9,7 +9,8 @@ export async function request(path, options = {}) {
   return data;
 }
 
-export const get = (path) => request(path);
+/** GET; `options.signal` permite cancelar (búsquedas mientras se escribe). */
+export const get = (path, options) => request(path, options);
 export const post = (path, body) => request(path, { method: "POST", body: JSON.stringify(body) });
 export const put = (path, body) => request(path, { method: "PUT", body: JSON.stringify(body) });
 export const del = (path) => request(path, { method: "DELETE" });
