@@ -14,6 +14,8 @@ export default defineConfig({
       "/api": "http://localhost:4000",
       "/photos": "http://localhost:4000",
       "/certificates": "http://localhost:4000",
+      "/covers": "http://localhost:4000",
+      "/artworks": "http://localhost:4000",
     },
   },
 });

@@ -1,4 +1,4 @@
-import { get, post, put, del, toQuery } from "./request.js";
+import { request, get, post, put, del, toQuery } from "./request.js";
 
 export const ocioApi = {
   // biblioteca (obras + tu entrada + pasadas)
@@ -40,6 +40,23 @@ export const ocioApi = {
   },
   importKoreader: (data) => post("/ocio/koreader/import", data),
   getKoreaderStatus: () => get("/ocio/koreader/status"),
+
+  // Galería y atril
+  getArtworks: (params) => get(`/ocio/artworks?${toQuery(params || {})}`),
+  uploadArtwork: async (file, thumb, fields = {}) => {
+    const fd = new FormData();
+    fd.append("image", file);
+    if (thumb) fd.append("thumb", thumb, "thumb.png");
+    for (const [k, v] of Object.entries(fields)) if (v != null) fd.append(k, String(v));
+    const res = await fetch("/api/ocio/artworks", { method: "POST", body: fd });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) throw Object.assign(new Error(data?.message || data?.error || `request_failed_${res.status}`), { data });
+    return data;
+  },
+  updateArtwork: (id, data) => request(`/ocio/artworks/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  deleteArtwork: (id) => del(`/ocio/artworks/${id}`),
+  getEasel: () => get("/ocio/easel"),
+  setEaselSettings: (data) => put("/ocio/easel/settings", data),
 
   // Google Calendar (OAuth y sincronización viven en el server)
   getGoogleStatus: () => get("/google/status"),

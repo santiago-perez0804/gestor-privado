@@ -8,9 +8,19 @@ import { fisicoRoutes } from "./pages/fisico/routes.jsx";
 import { gastosRoutes } from "./pages/gastos/routes.jsx";
 import { ocioRoutes } from "./pages/ocio/routes.jsx";
 import { proyectosRoutes } from "./pages/proyectos/routes.jsx";
+import { ModoMuseo } from "./pages/ocio/ModoMuseo.jsx";
 
 export default function App() {
   const { pathname } = useLocation();
+  // Modo museo: pantalla completa sin el marco de la app (también sirve como widget de escritorio).
+  if (pathname === "/museo")
+    return (
+      <ErrorBoundary resetKey={pathname}>
+        <Routes>
+          <Route path="/museo" element={<ModoMuseo />} />
+        </Routes>
+      </ErrorBoundary>
+    );
   // En pantalla grande la barra lateral (AppShell) reemplaza la barra de arriba y la de abajo.
   // Finanzas y Ocio usan todo el ancho (el Resumen de Finanzas, todo el alto); los demás módulos
   // mantienen su columna angosta.

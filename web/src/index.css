@@ -247,6 +247,16 @@ input:disabled {
   animation: story-in 0.45s cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 
+/* Atril y modo museo: cada obra nueva aparece con un fundido. */
+@keyframes easel-fade {
+  from {
+    opacity: 0;
+  }
+}
+.easel-fade {
+  animation: easel-fade 0.6s ease;
+}
+
 /* Filas que se deslizan de costado (pestañas) sin mostrar la barra de scroll. */
 .no-scrollbar {
   scrollbar-width: none;

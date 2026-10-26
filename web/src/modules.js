@@ -17,6 +17,7 @@ import {
   Landmark,
   LayoutDashboard,
   Lightbulb,
+  Palette,
   LineChart,
   PieChart,
   Popcorn,
@@ -110,6 +111,10 @@ export const MODULES = [
       {
         label: "Agenda",
         items: [{ to: "/ocio/salidas", label: "Salidas", icon: CalendarDays, badge: "outings" }],
+      },
+      {
+        label: "Creación",
+        items: [{ to: "/ocio/galeria", label: "Galería", icon: Palette, badge: "artworks" }],
       },
       {
         label: "Analizar",

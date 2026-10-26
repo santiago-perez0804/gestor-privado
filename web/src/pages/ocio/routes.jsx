@@ -6,6 +6,7 @@ import { ObraDetalle } from "./ObraDetalle.jsx";
 import { OcioSalidas } from "./OcioSalidas.jsx";
 import { Estadisticas } from "./Estadisticas.jsx";
 import { ResumenAnual } from "./ResumenAnual.jsx";
+import { Galeria } from "./Galeria.jsx";
 
 export const ocioRoutes = [
   <Route key="ocio" path="/ocio" element={<OcioLayout />}>
@@ -16,6 +17,8 @@ export const ocioRoutes = [
     <Route path="salidas" element={<OcioSalidas />} />
     <Route path="estadisticas" element={<Estadisticas />} />
     <Route path="resumen" element={<ResumenAnual />} />
+    <Route path="galeria" element={<Galeria />} />
+    <Route path="museo" element={<Navigate to="/museo" replace />} />
     {/* Ruta vieja (antes del rediseño) */}
     <Route path="medios" element={<Navigate to="/ocio/biblioteca" replace />} />
   </Route>,

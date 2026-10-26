@@ -8,7 +8,7 @@ export const handle = (fn, okStatus = 200) => (req, res, next) => {
     if (out === undefined) res.status(204).end();
     else res.status(okStatus).json(out);
   } catch (err) {
-    if (err.status) res.status(err.status).json({ error: err.message });
+    if (err.status) res.status(err.status).json({ error: err.message, ...(err.userMessage && { message: err.userMessage }) });
     else next(err);
   }
 };

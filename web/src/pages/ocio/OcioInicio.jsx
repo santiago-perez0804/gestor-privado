@@ -14,6 +14,7 @@ import { categoryInfo, dateTile, longDate, relativeDays, shortDay, weekdayName, 
 import { useOcio } from "./OcioContext.jsx";
 import { MonthlyBlocks } from "../../components/ocio/MonthlyBlocks.jsx";
 import { YearToggle } from "../../components/ocio/YearToggle.jsx";
+import { EaselFrame } from "../../components/ocio/Easel.jsx";
 
 const fmt1 = (n) => String(n).replace(".", ",");
 
@@ -95,6 +96,10 @@ export function OcioInicio() {
   const currentYear = Number(today.slice(0, 4));
   const [year, setYear] = useState(currentYear);
   const homeApi = useApi(() => api.getOcioHome(year), [year, version]);
+  const easelApi = useApi(() => api.getEasel(), [version]);
+  const easel = easelApi.data;
+  // "Mostrar el atril en Inicio" apagado: "En curso" ocupa todo el ancho.
+  const showEasel = !easel || easel.settings.showOnHome;
   const h = homeApi.data;
 
   return (
@@ -131,7 +136,7 @@ export function OcioInicio() {
           </section>
 
           <div className="grid gap-4 lg:gap-0 lg:grid-cols-[minmax(0,1fr)_minmax(17rem,22rem)]">
-            <Panel className="lg:border-r lg:border-b">
+            <Panel className={showEasel ? "lg:border-r lg:border-b" : "lg:col-span-2 lg:border-b"}>
               <SectionTitle to="/ocio/biblioteca" action="Ver biblioteca">
                 En curso ahora
               </SectionTitle>
@@ -162,16 +167,24 @@ export function OcioInicio() {
               )}
             </Panel>
 
-            <Panel className="lg:border-b">
-              <SectionTitle>En el atril</SectionTitle>
-              <div className="rounded-xl flex flex-col items-center justify-center text-center gap-2 p-6" style={{ border: "1px dashed var(--border)", minHeight: 200 }}>
-                <Palette size={22} style={{ color: "var(--text-faint)" }} />
-                <p className="text-sm font-medium">Tu galería de dibujos</p>
-                <p className="text-xs" style={{ color: "var(--text-faint)" }}>
-                  Llega en una próxima fase: vas a poder subir tus dibujos y verlos rotar acá.
-                </p>
-              </div>
-            </Panel>
+            {showEasel && (
+              <Panel className="lg:border-b">
+                <SectionTitle to="/ocio/galeria" action="Ver galería">
+                  En el atril
+                </SectionTitle>
+                {easel?.items.length ? (
+                  <EaselFrame easel={easel} />
+                ) : (
+                  <Link to="/ocio/galeria" className="card-hover rounded-xl flex flex-col items-center justify-center text-center gap-2 p-6" style={{ border: "1px dashed var(--border)", minHeight: 200 }}>
+                    <Palette size={22} style={{ color: "var(--text-faint)" }} />
+                    <span className="text-sm font-medium">{easel?.total ? "Ninguna obra en el atril" : "Tu galería de dibujos"}</span>
+                    <span className="text-xs" style={{ color: "var(--text-faint)" }}>
+                      {easel?.total ? "Marcá alguna obra para que aparezca acá." : "Subí tus dibujos y van a ir rotando acá."}
+                    </span>
+                  </Link>
+                )}
+              </Panel>
+            )}
 
             <Panel className="lg:border-r lg:border-b">
               <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
