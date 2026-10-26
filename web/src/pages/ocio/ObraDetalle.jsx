@@ -159,8 +159,13 @@ function ReviewBlock({ entryId, review, onChanged }) {
 /** Páginas por día (de las sesiones de lectura): un día por barra, con huecos en cero. */
 function PagesPerDay({ sessions }) {
   const byDay = new Map();
+  const localDay = (iso) => {
+    const d = new Date(iso);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  };
   for (const s of sessions) {
-    const day = s.startTime.slice(0, 10);
+    // Las sesiones se guardan en UTC: se agrupan por el día local (leer a las 23 h es "ese" día).
+    const day = localDay(s.startTime);
     byDay.set(day, (byDay.get(day) || 0) + s.pagesRead);
   }
   const days = [...byDay.keys()].sort();

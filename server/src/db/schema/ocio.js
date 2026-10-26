@@ -109,6 +109,17 @@ CREATE TABLE IF NOT EXISTS reading_sessions (
 CREATE INDEX IF NOT EXISTS idx_reading_sessions_work ON reading_sessions(workId, startTime);
 CREATE INDEX IF NOT EXISTS idx_reading_sessions_start ON reading_sessions(startTime);
 
+-- Libros de KOReader y a qué obra de la biblioteca corresponden (para importar sesiones sin
+-- preguntar de nuevo). La clave es el md5 del archivo si KOReader lo tiene, o título|autor.
+CREATE TABLE IF NOT EXISTS koreader_books (
+  key TEXT PRIMARY KEY,
+  title TEXT,
+  authors TEXT,
+  pages INTEGER,
+  workId INTEGER REFERENCES works(id) ON DELETE SET NULL,
+  lastImportedAt TEXT
+);
+
 CREATE TABLE IF NOT EXISTS artworks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   title TEXT NOT NULL,

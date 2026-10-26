@@ -1,12 +1,13 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { Dices, LayoutGrid, List, Loader2, Plus, Search, Shuffle } from "lucide-react";
+import { Dices, LayoutGrid, List, Loader2, Plus, Search, Shuffle, Upload } from "lucide-react";
 import { PageTransition } from "../../components/common/PageTransition.jsx";
 import { PageBar } from "../../components/common/PageBar.jsx";
 import { Modal } from "../../components/common/Modal.jsx";
 import { WorkCover } from "../../components/ocio/WorkCover.jsx";
 import { Stars } from "../../components/ocio/Stars.jsx";
 import { ItemProgress, StatusPill, TypeLabel } from "../../components/ocio/bits.jsx";
+import { KoreaderImportModal } from "../../components/ocio/KoreaderImportModal.jsx";
 import { useApi } from "../../hooks/useApi.js";
 import { api } from "../../lib/api.js";
 import { STATUS_LABELS, TYPE_ORDER, WORK_TYPES, statusLabel, typeAndYear, typeBySlug } from "../../lib/ocio/types.js";
@@ -158,6 +159,7 @@ export function Biblioteca() {
   const navigate = useNavigate();
   const { version, openAdd, genreLabel, bump } = useOcio();
   const [picking, setPicking] = useState(false);
+  const [importing, setImporting] = useState(false);
   const libraryApi = useApi(() => api.getLibrary(), [version]);
 
   const status = params.get("estado") || "";
@@ -210,6 +212,12 @@ export function Biblioteca() {
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: "var(--text-faint)" }} />
           <input value={q} onChange={(e) => setParam("q", e.target.value)} placeholder="Buscar por título, autor o género…" aria-label="Buscar en la biblioteca" className="w-full h-10 rounded-lg pl-9 pr-3 text-sm" />
         </label>
+        {(!type || type === "book") && (
+          <button onClick={() => setImporting(true)} className="hover-surface flex items-center gap-1.5 h-10 px-3.5 text-sm font-medium" style={{ border: "1px solid var(--border)" }} title="Importar lecturas de KOReader (Kindle)">
+            <Upload size={15} />
+            Importar
+          </button>
+        )}
         <button onClick={() => openAdd(type || undefined)} className="flex items-center gap-1.5 h-10 px-4 rounded-xl text-sm font-semibold" style={{ background: "var(--accent)", color: "var(--on-accent)" }}>
           <Plus size={16} />
           Agregar
@@ -328,6 +336,7 @@ export function Biblioteca() {
       )}
 
       {picking && <PickForMe pool={wantPool} onClose={() => setPicking(false)} onStart={startPick} />}
+      {importing && <KoreaderImportModal onClose={() => setImporting(false)} onImported={bump} />}
     </PageTransition>
   );
 }

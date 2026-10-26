@@ -400,7 +400,7 @@ export function createLibrary(db) {
     const passes = q.passesOf.all(entryId).map(rowToPass);
     const reviews = db.prepare("SELECT * FROM reviews WHERE entryId = ? ORDER BY createdAt DESC").all(entryId);
     const highlights = db.prepare("SELECT * FROM highlights WHERE workId = ? ORDER BY createdAt").all(it.workId);
-    const sessions = db.prepare("SELECT startTime, durationSeconds, pagesRead FROM reading_sessions WHERE workId = ? ORDER BY startTime").all(it.workId);
+    const sessions = db.prepare("SELECT startTime, durationSeconds, pagesRead, source FROM reading_sessions WHERE workId = ? ORDER BY startTime").all(it.workId);
     const others = list().filter((o) => o.id !== it.id);
     const shared = (o) => o.genres.filter((g) => it.genres.includes(g)).length + (o.creators.some((c) => it.creators.includes(c)) ? 2 : 0);
     const related = others

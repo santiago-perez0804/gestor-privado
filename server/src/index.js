@@ -28,6 +28,7 @@ import registerExchangeRateRoutes, { fetchRates } from "./routes/exchangeRate.js
 import registerOcioRoutes from "./routes/ocio.js";
 import registerCatalogRoutes from "./routes/catalog.js";
 import registerGoogleRoutes from "./routes/google.js";
+import registerKoreaderRoutes from "./routes/koreader.js";
 import { google } from "./services/google/index.js";
 import registerOutingsRoutes from "./routes/outings.js";
 import registerProjectsRoutes from "./routes/projects.js";
@@ -81,6 +82,7 @@ registerExchangeRateRoutes(app);
 registerOcioRoutes(app);
 registerCatalogRoutes(app);
 registerGoogleRoutes(app);
+registerKoreaderRoutes(app);
 registerOutingsRoutes(app);
 registerProjectsRoutes(app);
 registerCertificatesRoutes(app);

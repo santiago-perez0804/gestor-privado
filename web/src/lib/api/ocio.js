@@ -26,6 +26,19 @@ export const ocioApi = {
   searchCatalog: (type, q, signal) => get(`/catalog/search?${toQuery({ type, q })}`, { signal }),
   getCatalogDetails: (type, source, id) => get(`/catalog/details?${toQuery({ type, source, id })}`),
 
+  // KOReader (estadísticas de lectura del Kindle)
+  previewKoreader: async (file, gapMinutes) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    if (gapMinutes) fd.append("gapMinutes", String(gapMinutes));
+    const res = await fetch("/api/ocio/koreader/preview", { method: "POST", body: fd });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) throw Object.assign(new Error(data?.message || data?.error || `request_failed_${res.status}`), { data });
+    return data;
+  },
+  importKoreader: (data) => post("/ocio/koreader/import", data),
+  getKoreaderStatus: () => get("/ocio/koreader/status"),
+
   // Google Calendar (OAuth y sincronización viven en el server)
   getGoogleStatus: () => get("/google/status"),
   syncGoogle: () => post("/google/sync", {}),
