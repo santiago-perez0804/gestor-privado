@@ -1,0 +1,22 @@
+node_modules/
+server/data/*.db
+server/data/*.db-journal
+server/data/photos/
+.DS_Store
+dist/
+cloudflared.exe
+server/data/backups/
+server/data/certificates/
+dist-desktop/
+
+# Secretos (API keys, OAuth): nunca al repo. El ejemplo sí se versiona.
+.env
+.env.*
+!.env.example
+
+# Datos locales que genera la app
+server/data/*.db-wal
+server/data/*.db-shm
+server/data/covers/
+server/data/artworks/
+server/data/imports/

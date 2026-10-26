@@ -1,0 +1,353 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #f5f6f4;
+  --surface: #ffffff;
+  --surface-alt: #eef1ec;
+  --border: #e1e5dd;
+  --text: #171f1b;
+  --text-muted: #5b6b62;
+  --text-faint: #8b978e;
+  --accent: #146356;
+  --accent-strong: #0d4a40;
+  --accent-soft: #e2efec;
+  --on-accent: #ffffff;
+  --danger: #b3432b;
+  --danger-soft: #f6e6e1;
+  --shadow-sm: 0 1px 2px rgba(23, 31, 27, 0.05);
+  --shadow-md: 0 10px 30px -14px rgba(23, 31, 27, 0.22);
+  --focus: #146356;
+  --chart-future: 0.45;
+
+  --chart-cat-1: #2a78d6;
+  --chart-cat-2: #eb6834;
+  --chart-cat-3: #1baf7a;
+  --chart-cat-4: #eda100;
+  --chart-cat-5: #e87ba4;
+  --chart-cat-6: #008300;
+  --chart-cat-7: #4a3aa7;
+  --chart-cat-8: #e34948;
+
+  --status-good: #0ca30c;
+  --status-warning: #fab219;
+  --status-critical: #d03b3b;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #10140f;
+    --surface: #171e18;
+    --surface-alt: #1d251e;
+    --border: #29332a;
+    --text: #edf2ec;
+    --text-muted: #9caa9c;
+    --text-faint: #6c7a6c;
+    --accent: #45b69c;
+    --accent-strong: #6fd0b8;
+    --accent-soft: #1e332c;
+    --on-accent: #0b1a15;
+    --danger: #e2836a;
+    --danger-soft: #3a251c;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+    --shadow-md: 0 10px 30px -14px rgba(0, 0, 0, 0.6);
+    --focus: #6fd0b8;
+
+    --chart-cat-1: #3987e5;
+    --chart-cat-2: #d95926;
+    --chart-cat-3: #199e70;
+    --chart-cat-4: #c98500;
+    --chart-cat-5: #d55181;
+    --chart-cat-6: #008300;
+    --chart-cat-7: #9085e9;
+    --chart-cat-8: #e66767;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #10140f;
+  --surface: #171e18;
+  --surface-alt: #1d251e;
+  --border: #29332a;
+  --text: #edf2ec;
+  --text-muted: #9caa9c;
+  --text-faint: #6c7a6c;
+  --accent: #45b69c;
+  --accent-strong: #6fd0b8;
+  --accent-soft: #1e332c;
+  --on-accent: #0b1a15;
+  --danger: #e2836a;
+  --danger-soft: #3a251c;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 10px 30px -14px rgba(0, 0, 0, 0.6);
+  --focus: #6fd0b8;
+
+  --chart-cat-1: #3987e5;
+  --chart-cat-2: #d95926;
+  --chart-cat-3: #199e70;
+  --chart-cat-4: #c98500;
+  --chart-cat-5: #d55181;
+  --chart-cat-6: #008300;
+  --chart-cat-7: #9085e9;
+  --chart-cat-8: #e66767;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.font-mono {
+  font-family: "IBM Plex Mono", ui-monospace, "SFMono-Regular", monospace;
+}
+
+input,
+select,
+textarea {
+  font-family: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+input:focus,
+select:focus,
+textarea:focus,
+button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-faint);
+}
+
+button {
+  font-family: inherit;
+}
+
+/* Es una app, no un documento: el cursor no cambia a "texto" al pasar por etiquetas y números.
+   Los campos editables conservan su cursor y lo clickeable usa la mano. */
+body {
+  cursor: default;
+}
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]),
+textarea,
+[contenteditable="true"] {
+  cursor: text;
+}
+a,
+button,
+select,
+summary,
+label[for],
+input[type="checkbox"],
+input[type="radio"] {
+  cursor: pointer;
+}
+button:disabled,
+select:disabled,
+input:disabled {
+  cursor: not-allowed;
+}
+
+/* Acción de texto como caja invisible: todo el recuadro es clickeable (padding generoso), sin
+   ningún cambio visual al pasar el mouse. El foco con teclado se sigue viendo (outline global). */
+.ghost-action {
+  border-radius: 0.5rem;
+}
+
+/* Botones de ícono y opciones de menú: fondo suave al pasar el mouse, que ahí es lo esperable. */
+.hover-surface {
+  border-radius: 0.5rem;
+  transition: background-color 0.12s;
+}
+.hover-surface:hover {
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+.hover-surface:active {
+  background: color-mix(in srgb, var(--text) 10%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Filas que se deslizan de costado (pestañas) sin mostrar la barra de scroll. */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.sidebar-link:not([aria-current="page"]):hover {
+  background: var(--surface-alt);
+  color: var(--text);
+}
+
+/* En Gastos con pantalla grande la barra lateral ya permite moverse: la flecha de volver sobra. */
+@media (min-width: 1024px) {
+  .gastos-layout .page-back {
+    display: none;
+  }
+}
+
+/* Scroll interno discreto (columnas del Resumen, cuotas, historial). */
+.thin-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.thin-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+.thin-scroll::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 999px;
+}
+.thin-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ---------- Finanzas: Resumen ---------- */
+
+/* Filas de movimientos: editar y borrar aparecen al pasar el mouse (en pantallas táctiles, siempre). */
+.movement-row {
+  transition: background-color 0.12s;
+}
+.movement-row:hover {
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+}
+@media (hover: hover) {
+  .row-actions {
+    opacity: 0;
+    transition: opacity 0.12s;
+  }
+  .movement-row:hover .row-actions,
+  .movement-row:focus-within .row-actions {
+    opacity: 1;
+  }
+}
+
+/* Fondo de la lista (para los encabezados de día fijos): card en celular, panel plano en escritorio. */
+.movements {
+  --list-bg: var(--surface);
+}
+@media (min-width: 1024px) {
+  .movements {
+    --list-bg: var(--bg);
+  }
+}
+
+/* Monto grande del gasto rápido: el borde del contenedor marca el foco, no el input. */
+.hero-field {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+.hero-field:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.hero-field input,
+.hero-field input:focus {
+  border: 0;
+  background: transparent;
+  outline: none;
+}
+
+/* Medio de pago: los íconos se muestran si entran (cada botón necesita ~76px); si no, solo el texto. */
+.pm-toggle {
+  container-type: inline-size;
+}
+@container (max-width: 154px) {
+  .pm-toggle .pm-icon {
+    display: none;
+  }
+}
+
+/* Informe mensual: siempre con la paleta clara, para que en pantalla se vea como el PDF. */
+.report-paper {
+  --bg: #ffffff;
+  --surface: #ffffff;
+  --surface-alt: #f1f4ef;
+  --border: #dde3d9;
+  --text: #171f1b;
+  --text-muted: #4f5e55;
+  --text-faint: #7f8b82;
+  --accent: #146356;
+  --accent-strong: #0d4a40;
+  --accent-soft: #e2efec;
+  --danger: #b3432b;
+  --chart-cat-1: #2a78d6;
+  --chart-cat-2: #eb6834;
+  --chart-cat-3: #1baf7a;
+  --chart-cat-4: #eda100;
+  --chart-cat-5: #e87ba4;
+  --chart-cat-6: #008300;
+  --chart-cat-7: #4a3aa7;
+  --chart-cat-8: #e34948;
+  --status-good: #0b8f0b;
+  --status-warning: #c98a00;
+  --status-critical: #d03b3b;
+  background: var(--surface);
+  color: var(--text);
+}
+
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+  /* Aunque la app esté en tema oscuro, el papel es blanco. */
+  :root {
+    --bg: #ffffff !important;
+  }
+  html,
+  body,
+  #root {
+    height: auto;
+    background: #fff !important;
+  }
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .report-paper {
+    border: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    padding: 0 !important;
+    max-width: none !important;
+  }
+  .report-page-break {
+    break-before: page;
+  }
+  .report-keep {
+    break-inside: avoid;
+  }
+  .report-heading {
+    break-after: avoid;
+  }
+}
