@@ -10,7 +10,8 @@
     "serve": "npm run build && node server/src/index.js",
     "desktop": "npm run build && npm install --prefix desktop && npm start --prefix desktop",
     "expose": "concurrently -n app,tunnel -c blue,magenta \"npm run serve\" \".\\cloudflared.exe tunnel --url http://localhost:4000\"",
-    "pack:win": "npm run build && npm install && electron-builder --win"
+    "pack:win": "npm run build && npm install && electron-builder --win",
+    "test": "npm test --prefix server && npm test --prefix web"
   },
   "build": {
     "appId": "com.sapo.gestor",

@@ -192,6 +192,8 @@ async function ensureServer() {
   // con Windows el server levantaba una base vacía aparte y parecía que se habían borrado los datos.
   const dataDir = app.isPackaged ? join(app.getPath("userData"), "data") : join(ROOT, "server", "data");
   const env = { ...process.env, PORT: String(PORT), DATA_DIR: dataDir };
+  // Empaquetada, el .env (API keys) vive en la carpeta de datos del usuario y no dentro del instalador.
+  if (app.isPackaged) env.ENV_FILE = join(app.getPath("userData"), ".env");
   // El server local lo usa solo este equipo: sin basic auth para que el widget pueda pedir datos.
   delete env.AUTH_USER;
   delete env.AUTH_PASS;

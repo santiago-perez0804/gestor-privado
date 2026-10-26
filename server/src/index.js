@@ -1,3 +1,5 @@
+// Primero: variables de entorno (.env) para que el resto de los módulos ya las vea.
+import "./env.js";
 import express from "express";
 import cors from "cors";
 import { fileURLToPath } from "node:url";
