@@ -11,7 +11,7 @@ import { localInProgress } from "../../lib/fisico/workoutDevice.js";
 import { flushFinishedWorkout } from "./Entreno.jsx";
 
 // Pantallas ya rediseñadas (ocupan todo el ancho); el resto conserva la columna angosta de antes.
-const REDESIGNED = ["/fisico/plan", "/fisico/records", "/fisico/peso", "/fisico/medidas"];
+const REDESIGNED = ["/fisico/plan", "/fisico/records", "/fisico/peso", "/fisico/medidas", "/fisico/fotos"];
 const isRedesigned = (path) => REDESIGNED.some((p) => path === p || path.startsWith(`${p}/`));
 
 /** "PPL" → "PPL"; "Fuerza 5×5" → "FUERZ": la etiqueta corta del plan activo en la barra lateral. */

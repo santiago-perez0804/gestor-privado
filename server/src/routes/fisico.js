@@ -1,6 +1,7 @@
 // Físico (rediseño): ajustes, biblioteca de ejercicios, planes, rutinas y agenda.
 // Los cálculos viven en shared/fisico; acá solo se lee/escribe la base y se arma la respuesta.
-import { db } from "../db/index.js";
+import multer from "multer";
+import { db, privatePhotosDir } from "../db/index.js";
 import { handle } from "../lib/http.js";
 import { getSettings, saveSettings } from "../services/fisico/common.js";
 import { createExercises } from "../services/fisico/exercises.js";
@@ -10,6 +11,8 @@ import { createBody } from "../services/fisico/body.js";
 import { createWorkouts } from "../services/fisico/workouts.js";
 import { createRecords } from "../services/fisico/records.js";
 import { createMeasurements } from "../services/fisico/measurements.js";
+import { createPhotos } from "../services/fisico/photos.js";
+import { createPrivateFiles } from "../services/storage/privateFiles.js";
 
 export function fisicoServices() {
   const exercises = createExercises(db);
@@ -19,11 +22,16 @@ export function fisicoServices() {
   const workouts = createWorkouts(db, { history, plans, body });
   const records = createRecords(db, { history, plans });
   const measurements = createMeasurements(db);
-  return { exercises, history, plans, body, workouts, records, measurements };
+  const photos = createPhotos(db, { files: createPrivateFiles(privatePhotosDir), body, plans });
+  return { exercises, history, plans, body, workouts, records, measurements, photos };
 }
 
 export default function registerFisicoRoutes(app) {
-  const { exercises, plans, workouts, records, body, measurements } = fisicoServices();
+  const { exercises, plans, workouts, records, body, measurements, photos } = fisicoServices();
+  const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024, files: 2 } }).fields([
+    { name: "image", maxCount: 1 },
+    { name: "thumb", maxCount: 1 },
+  ]);
   const B = "/api/fisico";
 
   app.get(`${B}/settings`, handle(() => getSettings(db)));
@@ -74,6 +82,28 @@ export default function registerFisicoRoutes(app) {
   app.delete(`${B}/measurements/sessions/:id`, handle((req) => void measurements.removeSession(req.params.id)));
   app.put(`${B}/measurements/:id`, handle((req) => void measurements.updateValue(req.params.id, req.body || {})));
   app.delete(`${B}/measurements/:id`, handle((req) => void measurements.removeValue(req.params.id)));
+
+  // Fotos de progreso (privadas: sin carpeta pública; se sirven solo por acá, sin caché compartida)
+  app.get(`${B}/photos`, handle(() => photos.list()));
+  app.get(`${B}/photos/compare`, handle((req) => photos.compare(req.query.from, req.query.to)));
+  app.post(`${B}/photos`, (req, res, next) =>
+    upload(req, res, (e) => {
+      if (e) return res.status(e.code === "LIMIT_FILE_SIZE" ? 413 : 400).json({ error: e.code || "upload_failed" });
+      handle((r) => photos.upload({ image: r.files?.image?.[0]?.buffer, thumb: r.files?.thumb?.[0]?.buffer, ...r.body }), 201)(req, res, next);
+    })
+  );
+  app.get(`${B}/photos/:id/file`, (req, res, next) => {
+    try {
+      const f = photos.file(req.params.id, { thumb: req.query.size === "thumb" });
+      res.set({ "Cache-Control": "private, no-store", "Content-Type": f.mime, "Content-Disposition": "inline" });
+      res.sendFile(f.path);
+    } catch (err) {
+      if (err.status) return res.status(err.status).json({ error: err.message });
+      next(err);
+    }
+  });
+  app.delete(`${B}/photos/:id`, handle((req) => void photos.removePhoto(req.params.id)));
+  app.delete(`${B}/photo-sessions/:id`, handle((req) => void photos.removeSession(req.params.id)));
 
   // Récords
   app.get(`${B}/records`, handle(() => records.list()));

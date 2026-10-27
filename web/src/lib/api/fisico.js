@@ -87,13 +87,20 @@ export const fisicoApi = {
   // récords personales
   getExerciseRecords: (params) => get(`/exercise-logs/records?${toQuery(params)}`),
 
-  // fotos de progreso
-  getProgressPhotos: () => get("/progress-photos"),
-  uploadProgressPhoto: (formData) =>
-    fetch("/api/progress-photos", { method: "POST", body: formData }).then(async (res) => {
-      const data = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(data?.error || `request_failed_${res.status}`);
-      return data;
-    }),
-  deleteProgressPhoto: (id) => del(`/progress-photos/${id}`),
+  // fotos de progreso (privadas: se piden por la API)
+  getPhotos: () => get("/fisico/photos"),
+  comparePhotos: (from, to) => get(`/fisico/photos/compare?${toQuery({ from, to })}`),
+  photoUrl: (id, { thumb = false } = {}) => `/api/fisico/photos/${id}/file${thumb ? "?size=thumb" : ""}`,
+  uploadPhoto: async ({ image, thumb, date, pose, variant, note }) => {
+    const fd = new FormData();
+    fd.append("image", image, "foto.jpg");
+    if (thumb) fd.append("thumb", thumb, "mini.jpg");
+    for (const [k, v] of Object.entries({ date, pose, variant, note })) if (v) fd.append(k, v);
+    const res = await fetch("/api/fisico/photos", { method: "POST", body: fd });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) throw new Error(data?.message || data?.error || `request_failed_${res.status}`);
+    return data;
+  },
+  deletePhoto: (id) => del(`/fisico/photos/${id}`),
+  deletePhotoSession: (id) => del(`/fisico/photo-sessions/${id}`),
 };

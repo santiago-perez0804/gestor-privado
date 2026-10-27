@@ -5,7 +5,7 @@ import cors from "cors";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { existsSync } from "node:fs";
-import { db, photosDir, certificatesDir, coversDir, artworksDir } from "./db/index.js";
+import { db, certificatesDir, coversDir, artworksDir } from "./db/index.js";
 import { seedExerciseLibrary } from "./db/seedExerciseLibrary.js";
 import { generateDueRecurringExpenses, generateDueRecurringIncomes } from "./services/recurringExpenses.js";
 import { startDailyBackups } from "./services/backup.js";
@@ -18,7 +18,6 @@ import registerSettingsRoutes from "./routes/settings.js";
 import registerPlansRoutes from "./routes/plans.js";
 import registerFisicoRoutes from "./routes/fisico.js";
 import registerExerciseLogsRoutes from "./routes/exerciseLogs.js";
-import registerProgressPhotosRoutes from "./routes/progressPhotos.js";
 import registerExpensesRoutes from "./routes/expenses.js";
 import registerRecurringExpensesRoutes from "./routes/recurringExpenses.js";
 import registerBudgetsRoutes from "./routes/budgets.js";
@@ -65,7 +64,7 @@ app.use(requestGuard());
 app.use(cors({ origin: DEV_ORIGINS }));
 app.use(express.json({ limit: "1mb" }));
 app.use(basicAuth);
-app.use("/photos", express.static(photosDir));
+// Las fotos de progreso ya no se sirven como estáticos: son privadas (ver /api/fisico/photos/:id/file).
 app.use("/certificates", express.static(certificatesDir));
 // Portadas y galería: archivos que no cambian (el nombre incluye el id), se pueden cachear fuerte.
 app.use("/covers", express.static(coversDir, { maxAge: "30d", immutable: true }));
@@ -76,7 +75,6 @@ registerSettingsRoutes(app);
 registerPlansRoutes(app);
 registerFisicoRoutes(app);
 registerExerciseLogsRoutes(app);
-registerProgressPhotosRoutes(app);
 registerExpensesRoutes(app);
 registerRecurringExpensesRoutes(app);
 registerBudgetsRoutes(app);
@@ -102,7 +100,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const webDistPath = join(__dirname, "..", "..", "web", "dist");
 if (existsSync(webDistPath)) {
   app.use(express.static(webDistPath));
-  app.get(/^(?!\/api|\/photos|\/certificates|\/covers|\/artworks).*/, (req, res) => {
+  app.get(/^(?!\/api|\/certificates|\/covers|\/artworks).*/, (req, res) => {
     res.sendFile(join(webDistPath, "index.html"));
   });
 }

@@ -138,7 +138,7 @@ after(() => {
 
 test("todas las pantallas de lectura responden (los 4 módulos)", async () => {
   const paths = [
-    "/api/weights", "/api/plans", "/api/exercise-logs", "/api/exercise-logs/records", "/api/fisico/measurements", "/api/fisico/weight", "/api/fisico/records", "/api/fisico/workout/today", "/api/progress-photos",
+    "/api/weights", "/api/plans", "/api/exercise-logs", "/api/exercise-logs/records", "/api/fisico/measurements", "/api/fisico/weight", "/api/fisico/records", "/api/fisico/workout/today", "/api/fisico/photos",
     "/api/expenses", "/api/recurring-expenses", "/api/budgets", "/api/incomes", "/api/recurring-incomes", "/api/accounts", "/api/account-snapshots", "/api/debts", "/api/savings-goals",
     "/api/projects", "/api/certificates", "/api/settings",
     "/api/ocio/genres", "/api/ocio/counts", "/api/ocio/home", `/api/ocio/home?year=${year - 1}`, "/api/ocio/library", `/api/ocio/goals/${year}`,
@@ -562,4 +562,42 @@ test("Físico: entreno en vivo por HTTP (empezar, guardar idempotente, versión 
   const next = (await api("GET", `/api/fisico/workout/start?routineId=${routine.id}`)).data.exercises[0];
   assert.equal(next.previous.sets.length, 3, "la próxima vez muestra lo de hoy como anterior");
   assert.equal((await api("PUT", "/api/fisico/sessions/corto", toSnapshot(s))).status, 400);
+});
+
+test("Físico: fotos privadas (sin EXIF, sin URL pública, sin caché) y comparación", async () => {
+  const seg = (marker, payload) => Buffer.concat([Buffer.from([0xff, marker, (payload.length + 2) >> 8, (payload.length + 2) & 0xff]), payload]);
+  const jpeg = Buffer.concat([
+    Buffer.from([0xff, 0xd8]),
+    seg(0xe1, Buffer.concat([Buffer.from("Exif\0\0", "latin1"), Buffer.from("GPSLatitude -34.6", "latin1")])),
+    seg(0xc0, Buffer.from([0x08, 0x01, 0xe0, 0x02, 0x80, 0x03, 0x01, 0x22, 0x00, 0x02, 0x11, 0x01, 0x03, 0x11, 0x01])),
+    seg(0xda, Buffer.from([0x03, 0x01, 0x00, 0x02, 0x11, 0x03, 0x11, 0x00, 0x3f, 0x00])),
+    Buffer.from([0x12, 0x34, 0xff, 0xd9]),
+  ]);
+  const send = (date, pose) => {
+    const fd = new FormData();
+    fd.append("image", new Blob([jpeg]), "foto.jpg");
+    fd.append("date", date);
+    fd.append("pose", pose);
+    return api("POST", "/api/fisico/photos", fd);
+  };
+  const up = await send("2026-09-18", "front");
+  assert.equal(up.status, 201, JSON.stringify(up.data));
+  await send("2026-10-16", "front");
+  const file = await fetch(`${BASE}/api/fisico/photos/${up.data.id}/file`);
+  assert.equal(file.status, 200);
+  assert.equal(file.headers.get("cache-control"), "private, no-store");
+  const bytes = Buffer.from(await file.arrayBuffer());
+  assert.equal(bytes.includes(Buffer.from("GPSLatitude")), false, "sin la ubicación");
+  const list = (await api("GET", "/api/fisico/photos")).data;
+  assert.equal(list.sessions.length, 2);
+  assert.ok(!JSON.stringify(list).includes(".jpg"), "la API no expone nombres de archivo");
+  const legacy = await fetch(`${BASE}/photos/anything.jpg`);
+  assert.ok(!String(legacy.headers.get("content-type")).startsWith("image/"), "la carpeta pública de fotos ya no existe");
+  const cmp = (await api("GET", "/api/fisico/photos/compare?from=2026-09-18&to=2026-10-16")).data;
+  assert.equal(cmp.weeks, 4);
+  const csrf = new FormData();
+  csrf.append("image", new Blob([jpeg]), "x.jpg");
+  csrf.append("date", "2026-10-20");
+  assert.equal((await fetch(`${BASE}/api/fisico/photos`, { method: "POST", body: csrf, headers: { Origin: "https://evil.example" } })).status, 403, "otro sitio no puede subir");
+  for (const s of list.sessions) assert.equal((await api("DELETE", `/api/fisico/photo-sessions/${s.id}`)).status, 204);
 });
