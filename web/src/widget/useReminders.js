@@ -34,7 +34,7 @@ async function collect() {
   const tomorrow = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
   const [weights, logs, expenses, budgets, outings, media, incomes, recurring, settings] = await Promise.all([
     api.getWeights(),
-    api.getExerciseLogs(),
+    api.getSessions().catch(() => []),
     api.getExpenses(),
     api.getBudgets(),
     api.getOutings(),
@@ -50,8 +50,9 @@ async function collect() {
     reminders.push({ key: "peso", text: "¿Te pesaste hoy? Todavía no registraste tu peso.", action: "fisico" });
   }
 
+  // Entrenos terminados (el más reciente primero).
   const lastLog = logs[0];
-  const ago = lastLog ? daysSince(lastLog.recordedAt) : null;
+  const ago = lastLog ? daysSince(lastLog.startedAt) : null;
   if (ago != null && ago >= 3) {
     reminders.push({ key: "entreno", text: `Hace ${ago} días que no entrenás. ¡Las pesas no se levantan solas!`, action: "fisico" });
   }

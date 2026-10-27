@@ -44,6 +44,12 @@ export const fisicoApi = {
   reorderRoutineItems: (routineId, ids) => put(`/fisico/routines/${routineId}/items/order`, { ids }),
   updateRoutineItem: (id, data) => put(`/fisico/routine-items/${id}`, data),
   deleteRoutineItem: (id) => del(`/fisico/routine-items/${id}`),
+  // inicio y hábitos
+  getFisicoHome: () => get("/fisico/home"),
+  getHabits: () => get("/fisico/habits"),
+  addHabit: (data) => post("/fisico/habits", data),
+  updateHabit: (id, data) => put(`/fisico/habits/${id}`, data),
+  toggleHabit: (id, data) => put(`/fisico/habits/${id}/days`, data),
   // medidas
   getMeasurements: () => get("/fisico/measurements"),
   saveMeasurementSession: (data) => post("/fisico/measurements/sessions", data),
@@ -69,12 +75,12 @@ export const fisicoApi = {
   saveSession: (id, snapshot) => put(`/fisico/sessions/${id}`, snapshot),
 
 
-  // exercise logs
-  getExerciseLogs: (params) => get(`/exercise-logs?${toQuery(params)}`),
-  addExerciseLog: (data) => post("/exercise-logs", data),
-  updateExerciseLog: (id, data) => put(`/exercise-logs/${id}`, data),
-  deleteExerciseLog: (id) => del(`/exercise-logs/${id}`),
-
+  // inicio y hábitos
+  getFisicoHome: () => get("/fisico/home"),
+  getHabits: () => get("/fisico/habits"),
+  addHabit: (data) => post("/fisico/habits", data),
+  updateHabit: (id, data) => put(`/fisico/habits/${id}`, data),
+  toggleHabit: (id, data) => put(`/fisico/habits/${id}/days`, data),
   // medidas
   getMeasurements: () => get("/fisico/measurements"),
   saveMeasurementSession: (data) => post("/fisico/measurements/sessions", data),
@@ -84,9 +90,6 @@ export const fisicoApi = {
   // peso
   getWeightSummary: () => get("/fisico/weight"),
   setWeightGoal: (data) => put("/fisico/goal", data),
-  // récords personales
-  getExerciseRecords: (params) => get(`/exercise-logs/records?${toQuery(params)}`),
-
   // fotos de progreso (privadas: se piden por la API)
   getPhotos: () => get("/fisico/photos"),
   comparePhotos: (from, to) => get(`/fisico/photos/compare?${toQuery({ from, to })}`),

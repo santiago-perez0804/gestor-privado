@@ -1,6 +1,6 @@
 import { Navigate, Route } from "react-router-dom";
 import { FisicoLayout } from "./FisicoLayout.jsx";
-import { FisicoHome } from "./FisicoHome.jsx";
+import { FisicoInicio } from "./FisicoInicio.jsx";
 import { Peso } from "./Peso.jsx";
 import { PlanRutinas } from "./PlanRutinas.jsx";
 import { Records } from "./Records.jsx";
@@ -9,7 +9,7 @@ import { Fotos } from "./Fotos.jsx";
 
 export const fisicoRoutes = [
   <Route key="fisico" path="/fisico" element={<FisicoLayout />}>
-    <Route index element={<FisicoHome />} />
+    <Route index element={<FisicoInicio />} />
     <Route path="plan" element={<PlanRutinas />} />
     <Route path="plan/:planId" element={<PlanRutinas />} />
     <Route path="records" element={<Records />} />

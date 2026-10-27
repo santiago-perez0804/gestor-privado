@@ -13,6 +13,8 @@ import { createRecords } from "../services/fisico/records.js";
 import { createMeasurements } from "../services/fisico/measurements.js";
 import { createPhotos } from "../services/fisico/photos.js";
 import { createPrivateFiles } from "../services/storage/privateFiles.js";
+import { createHabits } from "../services/fisico/habits.js";
+import { createHome } from "../services/fisico/home.js";
 
 export function fisicoServices() {
   const exercises = createExercises(db);
@@ -23,11 +25,13 @@ export function fisicoServices() {
   const records = createRecords(db, { history, plans });
   const measurements = createMeasurements(db);
   const photos = createPhotos(db, { files: createPrivateFiles(privatePhotosDir), body, plans });
-  return { exercises, history, plans, body, workouts, records, measurements, photos };
+  const habits = createHabits(db);
+  const home = createHome(db, { plans, workouts, body, records, measurements, photos, habits, history });
+  return { exercises, history, plans, body, workouts, records, measurements, photos, habits, home };
 }
 
 export default function registerFisicoRoutes(app) {
-  const { exercises, plans, workouts, records, body, measurements, photos } = fisicoServices();
+  const { exercises, plans, workouts, records, body, measurements, photos, habits, home } = fisicoServices();
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024, files: 2 } }).fields([
     { name: "image", maxCount: 1 },
     { name: "thumb", maxCount: 1 },
@@ -71,6 +75,13 @@ export default function registerFisicoRoutes(app) {
   app.put(`${B}/routines/:id/items/order`, handle((req) => plans.reorderItems(req.params.id, req.body?.ids)));
   app.put(`${B}/routine-items/:id`, handle((req) => plans.updateItem(req.params.id, req.body || {})));
   app.delete(`${B}/routine-items/:id`, handle((req) => plans.removeItem(req.params.id)));
+
+  // Inicio y hábitos
+  app.get(`${B}/home`, handle(() => home.home()));
+  app.get(`${B}/habits`, handle(() => habits.list()));
+  app.post(`${B}/habits`, handle((req) => habits.create(req.body || {}), 201));
+  app.put(`${B}/habits/:id`, handle((req) => habits.update(req.params.id, req.body || {})));
+  app.put(`${B}/habits/:id/days`, handle((req) => habits.toggle(req.params.id, req.body || {})));
 
   // Peso
   app.get(`${B}/weight`, handle(() => body.summary()));

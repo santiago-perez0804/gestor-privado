@@ -66,3 +66,27 @@ test("medidas: sesión guiada, dirección por zona, relaciones, próxima y borra
   m.removeSession(id);
   assert.equal(m.summary().sessions.length, 1);
 });
+
+test("hábitos: tildar hoy, racha, últimos 7 días, agregar y quitar", async () => {
+  const { createHabits } = await import("../src/services/fisico/habits.js");
+  const { db } = setup();
+  const habits = createHabits(db);
+  const l = habits.list();
+  assert.equal(l.habits.length, 5, "los de la semilla");
+  const creatina = l.habits.find((h) => h.name === "Creatina");
+  const today = localDate(new Date());
+  for (let i = 1; i <= 3; i++) habits.toggle(creatina.id, { day: addDays(today, -i), done: true });
+  let after = habits.toggle(creatina.id, { done: true });
+  const c = after.habits.find((h) => h.id === creatina.id);
+  assert.equal(c.doneToday, true);
+  assert.equal(c.streak, 4);
+  assert.equal(c.week.filter((d) => d.done).length, 4);
+  assert.equal(after.best.name, "Creatina");
+  after = habits.toggle(creatina.id, { done: false });
+  assert.equal(after.habits.find((h) => h.id === creatina.id).streak, 3, "destildar hoy: la racha cuenta hasta ayer");
+  assert.throws(() => habits.toggle(creatina.id, { day: addDays(today, 1), done: true }), { message: "invalid_day" });
+  habits.create({ name: "Estirar", targetLabel: "10 min" });
+  const added = habits.list().habits.find((h) => h.name === "Estirar");
+  habits.update(added.id, { archived: true });
+  assert.equal(habits.list().habits.some((h) => h.name === "Estirar"), false);
+});

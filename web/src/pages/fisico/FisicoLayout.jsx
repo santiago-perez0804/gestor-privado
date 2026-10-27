@@ -10,9 +10,6 @@ import { FisicoContext } from "./FisicoContext.jsx";
 import { localInProgress } from "../../lib/fisico/workoutDevice.js";
 import { flushFinishedWorkout } from "./Entreno.jsx";
 
-// Pantallas ya rediseñadas (ocupan todo el ancho); el resto conserva la columna angosta de antes.
-const REDESIGNED = ["/fisico/plan", "/fisico/records", "/fisico/peso", "/fisico/medidas", "/fisico/fotos"];
-const isRedesigned = (path) => REDESIGNED.some((p) => path === p || path.startsWith(`${p}/`));
 
 /** "PPL" → "PPL"; "Fuerza 5×5" → "FUERZ": la etiqueta corta del plan activo en la barra lateral. */
 export const planTag = (name) => (name ? (name.length <= 5 ? name : name.split(/\s+/)[0].slice(0, 5)).toUpperCase() : "");
@@ -46,13 +43,7 @@ export function FisicoLayout() {
           </Link>
         )}
         <ErrorBoundary resetKey={pathname}>
-          {isRedesigned(pathname) ? (
-            <Outlet />
-          ) : (
-            <div className="lg:max-w-md lg:mx-auto lg:py-8">
-              <Outlet />
-            </div>
-          )}
+          <Outlet />
         </ErrorBoundary>
       </div>
     </FisicoContext.Provider>

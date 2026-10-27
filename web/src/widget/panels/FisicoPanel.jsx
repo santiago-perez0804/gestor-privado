@@ -5,22 +5,22 @@ import { PanelShell, Stat, Row, daysSince } from "./PanelShell.jsx";
 
 export function FisicoPanel({ onClose, onBack }) {
   const { data, loading, error } = useApi(
-    () => Promise.all([api.getWeights(), api.getSettings(), api.getExerciseLogs(), api.getPlans()]),
+    () => Promise.all([api.getWeights(), api.getSettings(), api.getSessions().catch(() => []), api.getPlans()]),
     []
   );
 
   let body = null;
   if (data) {
-    const [weights, settings, logs, plans] = data;
+    const [weights, settings, sessions, plans] = data;
     const sorted = [...weights].sort((a, b) => a.recordedAt.localeCompare(b.recordedAt));
     const current = sorted.at(-1);
     const previous = sorted.at(-2);
     const delta = current && previous ? +(current.weight - previous.weight).toFixed(1) : null;
     const goal = settings.weight_goal_kg ? parseFloat(settings.weight_goal_kg) : null;
     const toGoal = current && goal ? +(current.weight - goal).toFixed(1) : null;
-    const lastLog = logs[0];
-    const trainedAgo = lastLog ? daysSince(lastLog.recordedAt) : null;
-    const todayLogs = logs.filter((l) => daysSince(l.recordedAt) === 0).length;
+    const last = sessions[0];
+    const trainedAgo = last ? daysSince(last.startedAt) : null;
+    const todaySets = sessions.filter((s) => daysSince(s.startedAt) === 0).reduce((n, s) => n + (s.workingSets || 0), 0);
 
     body = (
       <>
@@ -39,7 +39,7 @@ export function FisicoPanel({ onClose, onBack }) {
         </div>
         <div className="flex flex-col gap-1.5">
           <Row right={trainedAgo == null ? "nunca" : trainedAgo === 0 ? "hoy" : `hace ${trainedAgo} d`}>Último entrenamiento</Row>
-          <Row right={todayLogs}>Series registradas hoy</Row>
+          <Row right={todaySets}>Series de trabajo hoy</Row>
           <Row right={plans.length}>Planes de entrenamiento</Row>
         </div>
       </>

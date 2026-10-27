@@ -138,7 +138,7 @@ after(() => {
 
 test("todas las pantallas de lectura responden (los 4 módulos)", async () => {
   const paths = [
-    "/api/weights", "/api/plans", "/api/exercise-logs", "/api/exercise-logs/records", "/api/fisico/measurements", "/api/fisico/weight", "/api/fisico/records", "/api/fisico/workout/today", "/api/fisico/photos",
+    "/api/weights", "/api/plans", "/api/fisico/home", "/api/fisico/habits", "/api/fisico/sessions", "/api/fisico/measurements", "/api/fisico/weight", "/api/fisico/records", "/api/fisico/workout/today", "/api/fisico/photos",
     "/api/expenses", "/api/recurring-expenses", "/api/budgets", "/api/incomes", "/api/recurring-incomes", "/api/accounts", "/api/account-snapshots", "/api/debts", "/api/savings-goals",
     "/api/projects", "/api/certificates", "/api/settings",
     "/api/ocio/genres", "/api/ocio/counts", "/api/ocio/home", `/api/ocio/home?year=${year - 1}`, "/api/ocio/library", `/api/ocio/goals/${year}`,
