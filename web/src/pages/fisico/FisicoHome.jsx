@@ -7,7 +7,7 @@ import { api } from "../../lib/api.js";
 
 const PILLS = [
   { to: "/fisico/plan", label: "Plan y rutinas", icon: ListChecks },
-  { to: "/fisico/progreso", label: "Progreso", icon: LineChart },
+  { to: "/fisico/peso", label: "Peso", icon: LineChart },
   { to: "/fisico/records", label: "Récords", icon: Trophy },
   { to: "/fisico/medidas", label: "Medidas", icon: Ruler },
   { to: "/fisico/fotos", label: "Fotos", icon: Camera },

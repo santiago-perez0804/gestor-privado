@@ -44,6 +44,9 @@ export const fisicoApi = {
   reorderRoutineItems: (routineId, ids) => put(`/fisico/routines/${routineId}/items/order`, { ids }),
   updateRoutineItem: (id, data) => put(`/fisico/routine-items/${id}`, data),
   deleteRoutineItem: (id) => del(`/fisico/routine-items/${id}`),
+  // peso
+  getWeightSummary: () => get("/fisico/weight"),
+  setWeightGoal: (data) => put("/fisico/goal", data),
   // récords
   getRecords: () => get("/fisico/records"),
   getRecentRecords: (days) => get(`/fisico/records/recent?${toQuery({ days })}`),
@@ -66,6 +69,9 @@ export const fisicoApi = {
   updateExerciseLog: (id, data) => put(`/exercise-logs/${id}`, data),
   deleteExerciseLog: (id) => del(`/exercise-logs/${id}`),
 
+  // peso
+  getWeightSummary: () => get("/fisico/weight"),
+  setWeightGoal: (data) => put("/fisico/goal", data),
   // récords personales
   getExerciseRecords: (params) => get(`/exercise-logs/records?${toQuery(params)}`),
 

@@ -21,7 +21,7 @@ export function fisicoServices() {
 }
 
 export default function registerFisicoRoutes(app) {
-  const { exercises, plans, workouts, records } = fisicoServices();
+  const { exercises, plans, workouts, records, body } = fisicoServices();
   const B = "/api/fisico";
 
   app.get(`${B}/settings`, handle(() => getSettings(db)));
@@ -61,6 +61,10 @@ export default function registerFisicoRoutes(app) {
   app.put(`${B}/routines/:id/items/order`, handle((req) => plans.reorderItems(req.params.id, req.body?.ids)));
   app.put(`${B}/routine-items/:id`, handle((req) => plans.updateItem(req.params.id, req.body || {})));
   app.delete(`${B}/routine-items/:id`, handle((req) => plans.removeItem(req.params.id)));
+
+  // Peso
+  app.get(`${B}/weight`, handle(() => body.summary()));
+  app.put(`${B}/goal`, handle((req) => body.setGoal(req.body || {})));
 
   // Récords
   app.get(`${B}/records`, handle(() => records.list()));

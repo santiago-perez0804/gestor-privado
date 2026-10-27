@@ -55,7 +55,7 @@ export const MODULES = [
       {
         label: "Cuerpo",
         items: [
-          { to: "/fisico/progreso", label: "Peso", icon: LineChart },
+          { to: "/fisico/peso", label: "Peso", icon: LineChart },
           { to: "/fisico/medidas", label: "Medidas", icon: Ruler },
           { to: "/fisico/fotos", label: "Fotos", icon: Camera },
         ],
