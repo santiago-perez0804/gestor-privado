@@ -392,11 +392,12 @@ async function rawRequest(method, path, headers = {}, body) {
 
 test("seguridad: otros sitios no pueden modificar datos ni leer la API (CSRF, CORS, rebinding, túnel)", async () => {
   // Un formulario de otra página que intenta subir algo.
+  const before = (await api("GET", "/api/ocio/artworks")).data.length;
   const fd = new FormData();
   fd.append("image", new Blob([makePng(4, 4)]), "x.png");
   const csrf = await fetch(BASE + "/api/ocio/artworks", { method: "POST", body: fd, headers: { Origin: "https://evil.example" } });
   assert.equal(csrf.status, 403);
-  assert.equal((await api("GET", "/api/ocio/artworks")).data.length, 0, "no se subió nada");
+  assert.equal((await api("GET", "/api/ocio/artworks")).data.length, before, "no se subió nada");
   // CORS: a otro sitio no se le habilita leer las respuestas.
   const cors = await fetch(BASE + "/api/expenses", { headers: { Origin: "https://evil.example" } });
   assert.equal(cors.headers.get("access-control-allow-origin"), null);
