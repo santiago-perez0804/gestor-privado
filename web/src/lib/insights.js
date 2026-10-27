@@ -9,7 +9,7 @@ import {
   monthlyTotal,
   monthlyTotalByCategory,
   MONTHS_ES,
-  CUTOFF_DAY,
+  billingPeriodBounds,
 } from "./billing.js";
 import { categoryLabel } from "./expenseCategories.js";
 import { currency } from "./format.js";
@@ -111,8 +111,8 @@ export function buildInsights({ expenses, incomes, budgets = [], recurring = [],
 
   // 3. Ritmo del período vs el anterior a la misma altura
   if (progress.dayNumber >= 5 && progress.daysLeft > 0) {
-    const start = new Date(bm.year, bm.month - 1, CUTOFF_DAY + 1);
-    const prevStart = new Date(prevBM.year, prevBM.month - 1, CUTOFF_DAY + 1);
+    const start = new Date(`${billingPeriodBounds(bm).start}T00:00:00`);
+    const prevStart = new Date(`${billingPeriodBounds(prevBM).start}T00:00:00`);
     const now = spentUntilDay(expenses, bm, progress.dayNumber, start);
     const before = toTodayPesos(spentUntilDay(expenses, prevBM, progress.dayNumber, prevStart), 1, inflationPct);
     if (before > 0) {

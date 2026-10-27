@@ -1,13 +1,42 @@
-// Día de cierre de la tarjeta. Es configurable (setting "billing_cutoff_day"): se carga al iniciar
-// con applyFinanceSettings y, como es un `let` exportado, todos los imports ven el valor nuevo.
-export const DEFAULT_CUTOFF_DAY = 26;
+// Período de la tarjeta. El cálculo vive en shared/finanzas/period.js (el server usa el mismo).
+// Configurable: el día de cierre por defecto (setting "billing_cutoff_day") y, por mes, una fecha de
+// cierre propia (setting "billing_period_closings": { "2026-11": "2026-11-19" }), porque los bancos
+// corren el cierre. Se cargan al iniciar con applyFinanceSettings; como son `let` exportados, todos
+// los imports ven el valor nuevo.
+import {
+  DEFAULT_CUTOFF_DAY,
+  billingMonthOf,
+  periodBounds,
+  periodProgress,
+  calendarDateIn,
+  periodConfig,
+} from "../../../shared/finanzas/period.js";
+
+export { DEFAULT_CUTOFF_DAY };
 export const CUTOFF_SETTING_KEY = "billing_cutoff_day";
+export const CLOSINGS_SETTING_KEY = "billing_period_closings";
 export let CUTOFF_DAY = DEFAULT_CUTOFF_DAY;
+export let PERIOD_CLOSINGS = {};
 
 export function setCutoffDay(day) {
-  const n = parseInt(day, 10);
-  CUTOFF_DAY = n >= 1 && n <= 28 ? n : DEFAULT_CUTOFF_DAY;
+  CUTOFF_DAY = periodConfig({ cutoffDay: day }).cutoffDay;
 }
+
+/** Cierres por mes (JSON del setting o un objeto). */
+export function setPeriodClosings(value) {
+  let parsed = value;
+  if (typeof value === "string") {
+    try {
+      parsed = JSON.parse(value);
+    } catch {
+      parsed = {};
+    }
+  }
+  PERIOD_CLOSINGS = periodConfig({ closings: parsed }).closings;
+}
+
+/** Configuración vigente del período (para las funciones de shared/finanzas/period). */
+export const periodCfg = () => ({ cutoffDay: CUTOFF_DAY, closings: PERIOD_CLOSINGS });
 export const MONTHS_ES = [
   "enero", "febrero", "marzo", "abril", "mayo", "junio",
   "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
@@ -15,17 +44,9 @@ export const MONTHS_ES = [
 export const MONTHS_ES_ABBR = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
 
 export function getBillingMonth(dateStr, cutoffDay = CUTOFF_DAY) {
-  const d = new Date(dateStr + "T00:00:00");
-  let year = d.getFullYear();
-  let month = d.getMonth();
-  if (d.getDate() > cutoffDay) {
-    month += 1;
-    if (month > 11) {
-      month = 0;
-      year += 1;
-    }
-  }
-  return { year, month };
+  // Con otro día de cierre explícito (poco común) no se aplican los cierres a mano.
+  const cfg = cutoffDay === CUTOFF_DAY ? periodCfg() : { cutoffDay };
+  return billingMonthOf(dateStr, cfg);
 }
 
 export function billingMonthKey({ year, month }) {
@@ -42,10 +63,15 @@ export function billingMonthLabel({ year, month }) {
   return `${MONTHS_ES[month]} de ${year}`;
 }
 
-export function billingPeriodRange({ year, month }) {
-  const start = new Date(year, month - 1, CUTOFF_DAY + 1);
-  const end = new Date(year, month, CUTOFF_DAY);
-  const fmt = (d) => `${d.getDate()} ${MONTHS_ES_ABBR[d.getMonth()]}`.toLowerCase();
+/** Desde y hasta (YYYY-MM-DD, inclusive) del período. */
+export const billingPeriodBounds = (bm) => periodBounds(bm, periodCfg());
+
+/** ¿Este período tiene fechas puestas a mano? */
+export const isCustomPeriod = (bm) => !!(PERIOD_CLOSINGS[billingMonthKey(bm)] || PERIOD_CLOSINGS[billingMonthKey(billingMonthAdd(bm, -1))]);
+
+export function billingPeriodRange(bm) {
+  const { start, end } = billingPeriodBounds(bm);
+  const fmt = (s) => `${Number(s.slice(8, 10))} ${MONTHS_ES_ABBR[Number(s.slice(5, 7)) - 1]}`.toLowerCase();
   return `${fmt(start)} – ${fmt(end)}`;
 }
 
@@ -91,21 +117,10 @@ export function projection(expenses, currentBillingMonth, monthsAhead) {
   });
 }
 
-/** Progreso del período de facturación actual: del día CUTOFF_DAY+1 del mes
- * anterior al día CUTOFF_DAY (inclusive) del mes de facturación. */
-export function billingPeriodProgress({ year, month }, todayStr) {
-  const start = new Date(year, month - 1, CUTOFF_DAY + 1);
-  const end = new Date(year, month, CUTOFF_DAY);
-  const today = new Date(todayStr + "T00:00:00");
-  const DAY_MS = 86400000;
-  const totalDays = Math.round((end - start) / DAY_MS) + 1;
-  const dayNumber = Math.min(Math.max(Math.round((today - start) / DAY_MS) + 1, 1), totalDays);
-  return {
-    totalDays,
-    dayNumber,
-    daysLeft: totalDays - dayNumber,
-    ratio: dayNumber / totalDays,
-  };
+/** Progreso del período de facturación: del día siguiente al cierre anterior hasta el cierre (inclusive). */
+export function billingPeriodProgress(bm, todayStr) {
+  const { totalDays, dayNumber, daysLeft, ratio } = periodProgress(bm, todayStr, periodCfg());
+  return { totalDays, dayNumber, daysLeft, ratio };
 }
 
 export const PAYMENT_METHODS = [
@@ -128,8 +143,5 @@ export function monthlyTotalByPaymentMethod(expenses, billingMonth) {
 
 /** Inverso de getBillingMonth: la fecha calendario (YYYY-MM-DD) del día `dayOfMonth` dentro de un período. */
 export function calendarDateForBillingMonth(bm, dayOfMonth) {
-  const { year, month } = dayOfMonth > CUTOFF_DAY ? billingMonthAdd(bm, -1) : bm;
-  const day = Math.min(dayOfMonth, new Date(year, month + 1, 0).getDate());
-  const pad = (n) => String(n).padStart(2, "0");
-  return `${year}-${pad(month + 1)}-${pad(day)}`;
+  return calendarDateIn(bm, dayOfMonth, periodCfg());
 }

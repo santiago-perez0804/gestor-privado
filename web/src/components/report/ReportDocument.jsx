@@ -1,7 +1,7 @@
 import { categoryLabel, categoryColorVar } from "../../lib/expenseCategories.js";
 import { merchantTypeLabel } from "../../lib/merchants.js";
 import { CATEGORY_GUIDE, SPECIAL_CASES } from "../../lib/classificationGuide.js";
-import { paymentMethodLabel, CUTOFF_DAY, MONTHS_ES } from "../../lib/billing.js";
+import { paymentMethodLabel, MONTHS_ES } from "../../lib/billing.js";
 import { formatShortDate } from "../../lib/format.js";
 import { BarList, Callout, ColumnChart, Delta, Kpi, Note, ReportSection, StackedBar, SubHeading, Table, Td, TONE_COLOR, money, num, pct } from "./ReportPrimitives.jsx";
 
@@ -459,7 +459,7 @@ function Quality({ r }) {
 
       <SubHeading>Cómo se calcula</SubHeading>
       <ul className="report-keep text-xs space-y-1 list-disc pl-4" style={{ color: "var(--text-muted)" }}>
-        <li>Período = ciclo de la tarjeta (del día {CUTOFF_DAY + 1} al {CUTOFF_DAY}). Una compra después del cierre cuenta para el período siguiente.</li>
+        <li>Período = ciclo de la tarjeta ({r.period.range}). Una compra después del cierre cuenta para el período siguiente.</li>
         <li>“Pagado en el período” suma lo que entra en el resumen: compras de un pago y la cuota del mes de compras anteriores. “Compras del período” toma cada compra hecha en el período una sola vez, por su valor total (sirve para ver hábitos).</li>
         <li>Las comparaciones entre períodos se pasan a pesos de hoy con una inflación de {num(inflationPct)}% mensual. Solo se compara contra períodos con al menos 10 compras y no menos del 40% de las de este, para que los primeros meses de uso no distorsionen.</li>
         <li>El tipo de comercio es el que cargaste; si falta, se deduce del título (y de lo que ya clasificaste antes con el mismo título).</li>
@@ -520,7 +520,7 @@ export function ReportDocument({ report: r, generatedAt }) {
           </p>
           <h1 className="text-2xl font-semibold capitalize mt-0.5">{r.period.label}</h1>
           <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
-            Período de tarjeta {r.period.range} · cierre el día {CUTOFF_DAY}
+            Período de tarjeta {r.period.range}
             {r.period.closed ? "" : ` · en curso (día ${r.period.daysElapsed} de ${r.period.totalDays})`}
           </p>
         </div>
