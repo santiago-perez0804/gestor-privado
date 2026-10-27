@@ -1,18 +1,18 @@
 import { useEffect, useRef, useState } from "react";
-import { BookOpen, CheckCircle2, FileUp, Loader2, X } from "lucide-react";
+import { CheckCircle2, FileUp, Loader2, X } from "lucide-react";
 import { Modal } from "../common/Modal.jsx";
 import { api } from "../../lib/api.js";
-import { dayMonthYear, durationText } from "../../lib/ocio/outings.js";
-
-const CONFIDENCE = { linked: "Ya vinculado", exact: "Coincide" };
+import { KoreaderBookRows } from "./KoreaderBookRows.jsx";
+import { KoreaderSyncPanel } from "./KoreaderSyncPanel.jsx";
+import { KoreaderPendingStep } from "./KoreaderPending.jsx";
 
 /**
- * Importar estadísticas de KOReader en tres pasos: subir statistics.sqlite3 → confirmar a qué libro
- * de la biblioteca va cada uno (con sugerencias) → resumen. Subir el mismo archivo de nuevo no
- * duplica nada.
+ * Lecturas de KOReader: arriba la sincronización automática por Dropbox; abajo la importación a mano
+ * en tres pasos: subir statistics.sqlite3 → confirmar a qué libro de la biblioteca va cada uno (con
+ * sugerencias) → resumen. Subir el mismo archivo de nuevo no duplica nada.
  */
-export function KoreaderImportModal({ onClose, onImported }) {
-  const [step, setStep] = useState("upload"); // upload | map | done
+export function KoreaderImportModal({ onClose, onImported, initialStep = "upload" }) {
+  const [step, setStep] = useState(initialStep); // upload | map | done | pending
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [preview, setPreview] = useState(null);
@@ -62,10 +62,10 @@ export function KoreaderImportModal({ onClose, onImported }) {
   const toImport = Object.values(mapping).filter((v) => v !== "skip").length;
 
   return (
-    <Modal onClose={onClose} labelledBy="koreader-title" width={step === "map" ? "52rem" : "32rem"}>
+    <Modal onClose={onClose} labelledBy="koreader-title" width={step === "map" || step === "pending" ? "52rem" : "36rem"}>
       <div className="flex items-center px-6 py-4" style={{ borderBottom: "1px solid var(--border)" }}>
         <h2 id="koreader-title" className="text-base font-semibold mr-auto">
-          Importar lecturas de KOReader
+          Lecturas de KOReader
         </h2>
         <button onClick={onClose} aria-label="Cerrar" className="hover-surface w-9 h-9 flex items-center justify-center" style={{ color: "var(--text-muted)" }}>
           <X size={18} />
@@ -74,6 +74,10 @@ export function KoreaderImportModal({ onClose, onImported }) {
 
       {step === "upload" && (
         <div className="p-6 space-y-4">
+          <KoreaderSyncPanel onSynced={onImported} onOpenPending={() => setStep("pending")} />
+          <p className="text-xs font-semibold uppercase tracking-wide pt-2" style={{ color: "var(--text-faint)" }}>
+            O a mano, por USB
+          </p>
           <p className="text-sm leading-relaxed" style={{ color: "var(--text-muted)" }}>
             Conectá el Kindle por USB y buscá el archivo <code className="font-mono text-xs">koreader/settings/statistics.sqlite3</code>. Se lee sin modificarlo; podés volver a subirlo cuando quieras (no duplica sesiones).
           </p>
@@ -107,45 +111,7 @@ export function KoreaderImportModal({ onClose, onImported }) {
           <p className="text-sm" style={{ color: "var(--text-muted)" }}>
             {preview.books.length} {preview.books.length === 1 ? "libro con lecturas" : "libros con lecturas"}. Revisá a qué libro de tu biblioteca corresponde cada uno.
           </p>
-          <div className="thin-scroll max-h-[26rem] overflow-y-auto rounded-xl" style={{ border: "1px solid var(--border)" }}>
-            {preview.books.map((b, i) => (
-              <div key={b.key} className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_16rem] items-center px-4 py-3" style={{ borderTop: i ? "1px solid var(--border)" : undefined }}>
-                <div className="min-w-0 flex gap-3">
-                  <BookOpen size={16} className="shrink-0 mt-0.5" style={{ color: "var(--ocio-book)" }} />
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold truncate">{b.title}</p>
-                    <p className="text-[11px] truncate" style={{ color: "var(--text-faint)" }}>
-                      {[b.authors?.replace(/\n/g, ", "), `${b.sessionCount} sesiones`, durationText(b.totalSeconds), b.lastRead && `última ${dayMonthYear(b.lastRead)}`].filter(Boolean).join(" · ")}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <select
-                    value={mapping[b.key]}
-                    onChange={(e) => setMapping((m) => ({ ...m, [b.key]: e.target.value }))}
-                    className="h-9 rounded-lg px-2 text-sm flex-1 min-w-0"
-                    aria-label={`A qué libro va ${b.title}`}
-                  >
-                    <option value="new">Agregar a la biblioteca</option>
-                    <option value="skip">No importar</option>
-                    <optgroup label="Tus libros">
-                      {books.map((lb) => (
-                        <option key={lb.workId} value={String(lb.workId)}>
-                          {lb.title}
-                          {lb.creators[0] ? ` · ${lb.creators[0]}` : ""}
-                        </option>
-                      ))}
-                    </optgroup>
-                  </select>
-                  {b.match && String(b.match.workId) === mapping[b.key] && (
-                    <span className="text-[10px] font-semibold rounded-full px-2 py-0.5 shrink-0" style={{ background: "color-mix(in srgb, var(--status-good) 14%, transparent)", color: "var(--status-good)" }}>
-                      {CONFIDENCE[b.match.confidence]}
-                    </span>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
+          <KoreaderBookRows books={preview.books} library={books} mapping={mapping} onChange={(key, value) => setMapping((m) => ({ ...m, [key]: value }))} />
           {error && (
             <p className="text-sm" style={{ color: "var(--danger)" }}>
               {error}
@@ -163,12 +129,24 @@ export function KoreaderImportModal({ onClose, onImported }) {
         </div>
       )}
 
+      {step === "pending" && (
+        <KoreaderPendingStep
+          onCancel={() => setStep("upload")}
+          onDone={(result) => {
+            setSummary(result);
+            setStep("done");
+            onImported?.();
+          }}
+        />
+      )}
+
       {step === "done" && summary && (
         <div className="p-6 text-center space-y-3">
           <CheckCircle2 size={30} className="mx-auto" style={{ color: "var(--status-good)" }} />
           <p className="text-sm">
             <b>{summary.sessionsNew}</b> sesiones nuevas{summary.sessionsUpdated ? <> y <b>{summary.sessionsUpdated}</b> actualizadas</> : null} de {summary.books} {summary.books === 1 ? "libro" : "libros"}
-            {summary.created ? <>; se {summary.created === 1 ? "agregó 1 libro" : `agregaron ${summary.created} libros`} a la biblioteca</> : null}.
+            {summary.created ? <>; se {summary.created === 1 ? "agregó 1 libro" : `agregaron ${summary.created} libros`} a la biblioteca</> : null}
+            {summary.ignored ? <>; {summary.ignored === 1 ? "1 libro ignorado" : `${summary.ignored} libros ignorados`}</> : null}.
           </p>
           <button onClick={onClose} className="h-10 px-5 rounded-xl text-sm font-semibold" style={{ background: "var(--accent)", color: "var(--on-accent)" }}>
             Listo

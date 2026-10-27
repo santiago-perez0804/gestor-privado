@@ -125,6 +125,31 @@ function ensureOutingExtras(db) {
 }
 
 /**
+ * Sincronización automática de KOReader por Dropbox (siempre, es idempotente):
+ * - `koreader_books.ignored`: libros del Kindle que el usuario marcó "no importar nunca".
+ *   Un libro con `workId` NULL y sin ignorar es un pendiente de confirmar.
+ * - `dropbox_account`: la cuenta conectada (refresh token cifrado) y el estado de la sincronización.
+ */
+function ensureKoreaderSync(db) {
+  if (!columns(db, "koreader_books").includes("ignored")) db.exec("ALTER TABLE koreader_books ADD COLUMN ignored INTEGER NOT NULL DEFAULT 0");
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS dropbox_account (
+      id INTEGER PRIMARY KEY CHECK(id = 1),
+      refreshTokenEnc TEXT,
+      email TEXT,
+      path TEXT NOT NULL DEFAULT '/statistics.sqlite3',
+      lastRev TEXT,
+      lastSyncAt TEXT,
+      lastCheckAt TEXT,
+      lastError TEXT,
+      lastSummary TEXT,
+      status TEXT NOT NULL DEFAULT 'disconnected' CHECK(status IN ('disconnected','connected','revoked','error')),
+      updatedAt TEXT NOT NULL
+    );
+  `);
+}
+
+/**
  * @param {import("node:sqlite").DatabaseSync} db
  * @param {{ backupsDir?: string, now?: Date }} [options]
  * @returns {{ ran: boolean, backupPath: string|null, works: number, passes: number, outings: number,
@@ -148,6 +173,7 @@ export function migrateOcioV2(db, { backupsDir, now = new Date() } = {}) {
     }
   }
   ensureOutingExtras(db);
+  ensureKoreaderSync(db);
   return summary;
 }
 

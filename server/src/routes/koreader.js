@@ -6,6 +6,7 @@ import { join, basename } from "node:path";
 import { db, importsDir } from "../db/index.js";
 import { createLibrary } from "../services/ocio/library.js";
 import { readKoreader, matchBooks, importKoreader, DEFAULT_GAP_MINUTES } from "../services/ocio/koreader.js";
+import { koreaderDropbox } from "../services/dropbox/index.js";
 
 const upload = multer({ dest: importsDir, limits: { fileSize: 100 * 1024 * 1024 } });
 
@@ -90,6 +91,7 @@ export default function registerKoreaderRoutes(app) {
   app.get("/api/ocio/koreader/status", (req, res) => {
     const row = db.prepare("SELECT MAX(lastImportedAt) AS lastImportAt, COUNT(workId) AS linkedBooks FROM koreader_books").get();
     const sessions = db.prepare("SELECT COUNT(*) AS n FROM reading_sessions WHERE source = 'koreader'").get().n;
-    res.json({ lastImportAt: row.lastImportAt, linkedBooks: row.linkedBooks, sessions });
+    const dropbox = koreaderDropbox().status();
+    res.json({ lastImportAt: row.lastImportAt, linkedBooks: row.linkedBooks, sessions, pending: dropbox.pending, dropbox: { connected: dropbox.connected, needsReconnect: dropbox.needsReconnect, lastSyncAt: dropbox.lastSyncAt, lastError: dropbox.lastError } });
   });
 }

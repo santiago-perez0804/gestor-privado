@@ -40,6 +40,14 @@ export const ocioApi = {
   },
   importKoreader: (data) => post("/ocio/koreader/import", data),
   getKoreaderStatus: () => get("/ocio/koreader/status"),
+  // Sincronización automática por Dropbox
+  getDropboxStatus: () => get("/dropbox/status"),
+  dropboxAuthUrl: "/api/dropbox/auth",
+  disconnectDropbox: () => post("/dropbox/disconnect", {}),
+  setKoreaderSyncPath: (path) => put("/ocio/koreader/sync-settings", { path }),
+  syncKoreader: (opts = {}) => post("/ocio/koreader/sync", opts),
+  getKoreaderPending: () => get("/ocio/koreader/pending"),
+  resolveKoreaderPending: (mapping) => post("/ocio/koreader/pending", { mapping }),
 
   // Galería y atril
   getArtworks: (params) => get(`/ocio/artworks?${toQuery(params || {})}`),

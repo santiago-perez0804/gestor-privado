@@ -31,6 +31,8 @@ import registerCatalogRoutes from "./routes/catalog.js";
 import registerGoogleRoutes from "./routes/google.js";
 import registerKoreaderRoutes from "./routes/koreader.js";
 import registerGalleryRoutes from "./routes/gallery.js";
+import registerDropboxRoutes from "./routes/dropbox.js";
+import { koreaderDropbox } from "./services/dropbox/index.js";
 import { google } from "./services/google/index.js";
 import registerOutingsRoutes from "./routes/outings.js";
 import registerProjectsRoutes from "./routes/projects.js";
@@ -57,6 +59,7 @@ fetchRates()
 prefetchMarket();
 startInstagramSync();
 google().start();
+koreaderDropbox().start();
 
 const app = express();
 app.use(securityHeaders);
@@ -89,6 +92,7 @@ registerCatalogRoutes(app);
 registerGoogleRoutes(app);
 registerKoreaderRoutes(app);
 registerGalleryRoutes(app);
+registerDropboxRoutes(app);
 registerOutingsRoutes(app);
 registerProjectsRoutes(app);
 registerCertificatesRoutes(app);

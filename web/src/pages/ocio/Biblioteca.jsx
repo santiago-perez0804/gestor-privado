@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { Dices, LayoutGrid, List, Loader2, Plus, Search, Shuffle, Upload } from "lucide-react";
+import { AlertCircle, Cloud, Dices, LayoutGrid, List, Loader2, Plus, Search, Shuffle, Upload, X } from "lucide-react";
 import { PageTransition } from "../../components/common/PageTransition.jsx";
 import { PageBar } from "../../components/common/PageBar.jsx";
 import { Modal } from "../../components/common/Modal.jsx";
@@ -9,6 +9,7 @@ import { Stars } from "../../components/ocio/Stars.jsx";
 import { ItemProgress, StatusPill, TypeLabel } from "../../components/ocio/bits.jsx";
 import { KoreaderImportModal } from "../../components/ocio/KoreaderImportModal.jsx";
 import { useApi } from "../../hooks/useApi.js";
+import { useKoreaderSync } from "../../hooks/useKoreaderSync.js";
 import { api } from "../../lib/api.js";
 import { STATUS_LABELS, TYPE_ORDER, WORK_TYPES, statusLabel, typeAndYear, typeBySlug } from "../../lib/ocio/types.js";
 import { useOcio } from "./OcioContext.jsx";
@@ -152,6 +153,53 @@ function PickForMe({ pool, onClose, onStart }) {
   );
 }
 
+/** Avisos de KOReader: libros nuevos para confirmar y el resultado de conectar Dropbox. */
+function KoreaderNotices({ pending, dropbox, reason, onReview, onOpen, onDismiss }) {
+  const notice = (tone, icon, text, action) => (
+    <div className="flex items-center gap-2.5 text-sm rounded-xl px-3.5 py-2.5 mb-3 lg:mb-0 lg:rounded-none lg:px-7" style={{ background: `color-mix(in srgb, ${tone} 10%, transparent)` }}>
+      {icon}
+      <span className="min-w-0 flex-1">{text}</span>
+      {action}
+    </div>
+  );
+  return (
+    <>
+      {dropbox === "conectado" &&
+        notice(
+          "var(--status-good)",
+          <Cloud size={15} style={{ color: "var(--status-good)" }} />,
+          "Dropbox conectado. Ahora configurá el Kindle para que suba sus estadísticas.",
+          <span className="flex items-center gap-1">
+            <button onClick={onOpen} className="ghost-action font-semibold px-1.5 py-0.5" style={{ color: "var(--accent-strong)" }}>
+              Ver cómo
+            </button>
+            <button onClick={onDismiss} aria-label="Cerrar aviso" className="hover-surface w-7 h-7 flex items-center justify-center" style={{ color: "var(--text-muted)" }}>
+              <X size={14} />
+            </button>
+          </span>
+        )}
+      {(dropbox === "error" || dropbox === "cancelado") &&
+        notice(
+          "var(--status-warning)",
+          <AlertCircle size={15} style={{ color: "var(--status-warning)" }} />,
+          dropbox === "cancelado" ? "Se canceló la conexión con Dropbox." : `No se pudo conectar Dropbox${reason ? ` (${reason})` : ""}.`,
+          <button onClick={onDismiss} aria-label="Cerrar aviso" className="hover-surface w-7 h-7 flex items-center justify-center" style={{ color: "var(--text-muted)" }}>
+            <X size={14} />
+          </button>
+        )}
+      {pending > 0 &&
+        notice(
+          "var(--accent)",
+          <Cloud size={15} style={{ color: "var(--accent-strong)" }} />,
+          pending === 1 ? "Llegó 1 libro nuevo del Kindle que no está en tu biblioteca." : `Llegaron ${pending} libros nuevos del Kindle que no están en tu biblioteca.`,
+          <button onClick={onReview} className="ghost-action font-semibold px-1.5 py-0.5 shrink-0" style={{ color: "var(--accent-strong)" }}>
+            Revisar
+          </button>
+        )}
+    </>
+  );
+}
+
 export function Biblioteca() {
   const { slug } = useParams();
   const type = typeBySlug(slug);
@@ -159,7 +207,9 @@ export function Biblioteca() {
   const navigate = useNavigate();
   const { version, openAdd, genreLabel, bump } = useOcio();
   const [picking, setPicking] = useState(false);
-  const [importing, setImporting] = useState(false);
+  const [importing, setImporting] = useState(false); // false | "upload" | "pending"
+  // KOReader por Dropbox: revisa al abrir (si pasó un rato) y avisa si hay libros para confirmar.
+  const koreader = useKoreaderSync(bump);
   const libraryApi = useApi(() => api.getLibrary(), [version]);
 
   const status = params.get("estado") || "";
@@ -213,7 +263,7 @@ export function Biblioteca() {
           <input value={q} onChange={(e) => setParam("q", e.target.value)} placeholder="Buscar por título, autor o género…" aria-label="Buscar en la biblioteca" className="w-full h-10 rounded-lg pl-9 pr-3 text-sm" />
         </label>
         {(!type || type === "book") && (
-          <button onClick={() => setImporting(true)} className="hover-surface flex items-center gap-1.5 h-10 px-3.5 text-sm font-medium" style={{ border: "1px solid var(--border)" }} title="Importar lecturas de KOReader (Kindle)">
+          <button onClick={() => setImporting("upload")} className="hover-surface flex items-center gap-1.5 h-10 px-3.5 text-sm font-medium" style={{ border: "1px solid var(--border)" }} title="Importar lecturas de KOReader (Kindle)">
             <Upload size={15} />
             Importar
           </button>
@@ -223,6 +273,8 @@ export function Biblioteca() {
           Agregar
         </button>
       </PageBar>
+
+      {(!type || type === "book") && <KoreaderNotices pending={koreader.status?.pending ?? 0} dropbox={params.get("dropbox")} reason={params.get("motivo")} onReview={() => setImporting("pending")} onOpen={() => setImporting("upload")} onDismiss={() => (setParam("motivo", ""), setParam("dropbox", ""))} />}
 
       <nav className="no-scrollbar flex gap-5 overflow-x-auto px-4 lg:px-7 max-lg:-mx-4" style={{ borderBottom: "1px solid var(--border)" }} aria-label="Tipo de obra">
         {[null, ...TYPE_ORDER].map((t) => {
@@ -336,7 +388,16 @@ export function Biblioteca() {
       )}
 
       {picking && <PickForMe pool={wantPool} onClose={() => setPicking(false)} onStart={startPick} />}
-      {importing && <KoreaderImportModal onClose={() => setImporting(false)} onImported={bump} />}
+      {importing && (
+        <KoreaderImportModal
+          initialStep={importing}
+          onClose={() => {
+            setImporting(false);
+            koreader.reload();
+          }}
+          onImported={bump}
+        />
+      )}
     </PageTransition>
   );
 }

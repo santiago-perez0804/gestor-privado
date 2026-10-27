@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Flame, RefreshCw, Sparkles, Table2 } from "lucide-react";
+import { Cloud, Flame, RefreshCw, Sparkles, Table2 } from "lucide-react";
 import { PageTransition } from "../../components/common/PageTransition.jsx";
 import { PageBar } from "../../components/common/PageBar.jsx";
 import { MonthlyBlocks } from "../../components/ocio/MonthlyBlocks.jsx";
@@ -9,6 +9,7 @@ import { WorkCover } from "../../components/ocio/WorkCover.jsx";
 import { Stars } from "../../components/ocio/Stars.jsx";
 import { Panel } from "../../components/ocio/bits.jsx";
 import { useApi } from "../../hooks/useApi.js";
+import { useKoreaderSync } from "../../hooks/useKoreaderSync.js";
 import { api } from "../../lib/api.js";
 import { todayDateInputValue } from "../../lib/format.js";
 import { MONTHS_ES, MONTHS_ES_ABBR } from "../../lib/billing.js";
@@ -466,16 +467,22 @@ function GeneralTab({ s, today, year, genreLabel }) {
   );
 }
 
-function KoreaderPill() {
-  const statusApi = useApi(() => api.getKoreaderStatus(), []);
-  const s = statusApi.data;
+/** Cuándo llegaron las últimas lecturas del Kindle (y si hay libros nuevos para confirmar). */
+function KoreaderPill({ onChanged }) {
+  const { status: s } = useKoreaderSync(onChanged);
   if (!s) return null;
   const when = s.lastImportAt ? new Date(s.lastImportAt) : null;
   const days = when ? Math.floor((Date.now() - when.getTime()) / 86_400_000) : null;
+  const auto = s.dropbox?.connected;
   return (
-    <span className="flex items-center gap-1.5 text-xs" style={{ color: "var(--text-muted)" }} title={s.sessions ? `${s.sessions} sesiones de ${s.linkedBooks} libros` : undefined}>
-      <RefreshCw size={13} />
+    <span className="flex items-center gap-1.5 text-xs" style={{ color: "var(--text-muted)" }} title={s.sessions ? `${s.sessions} sesiones de ${s.linkedBooks} libros${auto ? " · sincronización automática por Dropbox" : ""}` : undefined}>
+      {auto ? <Cloud size={13} /> : <RefreshCw size={13} />}
       {when ? `KOReader sincronizado ${days === 0 ? "hoy" : days === 1 ? "ayer" : `hace ${days} días`}` : "KOReader sin importar"}
+      {s.pending > 0 && (
+        <Link to="/ocio/biblioteca/libros" className="font-semibold" style={{ color: "var(--accent-strong)" }}>
+          · {s.pending === 1 ? "1 libro para confirmar" : `${s.pending} libros para confirmar`}
+        </Link>
+      )}
     </span>
   );
 }
@@ -503,7 +510,7 @@ export function Estadisticas() {
   return (
     <PageTransition>
       <PageBar crumb="Ocio · Analizar" title="Estadísticas">
-        <KoreaderPill />
+        <KoreaderPill onChanged={bump} />
         <Link to={`/ocio/resumen${year === currentYear ? "" : `?anio=${year}`}`} className="hover-surface flex items-center gap-1.5 h-9 px-3 text-sm font-semibold" style={{ border: "1px solid var(--border)" }}>
           <Sparkles size={14} style={{ color: "var(--accent)" }} />
           Resumen {year}

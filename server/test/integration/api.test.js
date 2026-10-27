@@ -28,6 +28,31 @@ let dataDir;
 let server;
 let log = "";
 
+// Dropbox falso (local): OAuth + un statistics.sqlite3 con `rev`. El server lo usa vía DROPBOX_API_URL.
+const dropboxFake = { file: null, rev: null, downloads: 0, server: null, port: 0 };
+async function startDropboxFake() {
+  const { createServer } = await import("node:http");
+  dropboxFake.server = createServer((req, res) => {
+    let body = "";
+    req.on("data", (c) => (body += c));
+    req.on("end", () => {
+      const json = (obj, status = 200) => (res.writeHead(status, { "Content-Type": "application/json" }), res.end(JSON.stringify(obj)));
+      if (req.url === "/oauth2/token") return json({ access_token: "at", refresh_token: "rt-it", expires_in: 14400 });
+      if (req.url === "/2/users/get_current_account") return json({ email: "kindle@example.com" });
+      if (req.url === "/2/auth/token/revoke") return json(null);
+      if (req.url === "/2/files/get_metadata") return dropboxFake.file ? json({ ".tag": "file", rev: dropboxFake.rev, size: dropboxFake.file.length }) : json({ error_summary: "path/not_found/" }, 409);
+      if (req.url === "/2/files/download") {
+        dropboxFake.downloads += 1;
+        res.writeHead(200, { "Content-Type": "application/octet-stream" });
+        return res.end(dropboxFake.file);
+      }
+      json({ error: "unexpected" }, 404);
+    });
+  });
+  await new Promise((r) => dropboxFake.server.listen(0, "127.0.0.1", r));
+  dropboxFake.port = dropboxFake.server.address().port;
+}
+
 async function api(method, path, body) {
   const isForm = body instanceof FormData;
   const res = await fetch(BASE + path, {
@@ -77,14 +102,18 @@ before(async () => {
     try {
       copy.exec("UPDATE projects SET accessToken = 'it-disabled' WHERE accessToken IS NOT NULL");
       copy.exec("DELETE FROM google_account");
+      copy.exec("DELETE FROM dropbox_account");
     } catch {
       // tablas que todavía no existen en esa base
     }
     copy.close();
   }
+  await startDropboxFake();
   server = spawn(process.execPath, ["src/index.js"], {
     cwd: SERVER_DIR,
-    env: { ...process.env, DATA_DIR: dataDir, PORT: String(PORT), ENV_FILE: join(dataDir, "no.env"), AUTH_USER: "", AUTH_PASS: "", GOOGLE_CLIENT_ID: "", GOOGLE_CLIENT_SECRET: "", TMDB_READ_TOKEN: "", TMDB_API_KEY: "", RAWG_API_KEY: "", GOOGLE_BOOKS_API_KEY: "" },
+    env: { ...process.env, DATA_DIR: dataDir, PORT: String(PORT), ENV_FILE: join(dataDir, "no.env"), AUTH_USER: "", AUTH_PASS: "", GOOGLE_CLIENT_ID: "", GOOGLE_CLIENT_SECRET: "", TMDB_READ_TOKEN: "", TMDB_API_KEY: "", RAWG_API_KEY: "", GOOGLE_BOOKS_API_KEY: "",
+      TOKEN_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString("base64"), DROPBOX_APP_KEY: "it-key", DROPBOX_APP_SECRET: "it-secret",
+      DROPBOX_API_URL: `http://127.0.0.1:${dropboxFake.port}`, DROPBOX_CONTENT_URL: `http://127.0.0.1:${dropboxFake.port}` },
     stdio: ["ignore", "pipe", "pipe"],
   });
   server.stdout.on("data", (d) => (log += d));
@@ -99,6 +128,7 @@ before(async () => {
 
 after(() => {
   server?.kill();
+  dropboxFake.server?.close();
   try {
     rmSync(dataDir, { recursive: true, force: true });
   } catch {
@@ -403,4 +433,69 @@ test("seguridad: la portada no puede usarse para que el server pida direcciones 
   } finally {
     victim.close();
   }
+});
+
+test("KOReader por Dropbox: conectar (OAuth), sincronizar solo lo nuevo, pendientes y desconectar", async () => {
+  const st0 = (await api("GET", "/api/dropbox/status")).data;
+  assert.equal(st0.configured, true);
+  assert.equal(st0.connected, false);
+  assert.equal((await api("POST", "/api/ocio/koreader/sync", {})).status, 409, "sin conectar");
+
+  // OAuth: /auth redirige a Dropbox con un state; el callback con otro state se rechaza.
+  const auth = await api("GET", "/api/dropbox/auth");
+  assert.equal(auth.status, 302);
+  const to = new URL(auth.headers.get("location"));
+  assert.equal(to.hostname, "www.dropbox.com");
+  assert.equal(to.searchParams.get("token_access_type"), "offline");
+  const bad = await api("GET", "/api/dropbox/callback?code=x&state=otro");
+  assert.match(bad.headers.get("location"), /dropbox=error/);
+  const ok = await api("GET", `/api/dropbox/callback?code=x&state=${to.searchParams.get("state")}`);
+  assert.match(ok.headers.get("location"), /dropbox=conectado/);
+  const st1 = (await api("GET", "/api/dropbox/status")).data;
+  assert.equal(st1.connected, true);
+  assert.equal(st1.email, "kindle@example.com");
+  assert.ok(!JSON.stringify(st1).includes("rt-it"), "el token nunca sale por la API");
+
+  // El Kindle subió su archivo: un libro de la biblioteca y uno desconocido.
+  const lib = await api("POST", "/api/ocio/library", { work: { type: "book", title: "Libro Dropbox Conocido", creators: ["Autora D"] }, entry: { status: "in_progress" } });
+  const file = join(dataDir, "dropbox-statistics.sqlite3");
+  const k = new DatabaseSync(file);
+  k.exec("CREATE TABLE book (id INTEGER PRIMARY KEY, title TEXT, authors TEXT, md5 TEXT, pages INTEGER)");
+  k.exec("CREATE TABLE page_stat_data (id_book INTEGER, page INTEGER, start_time INTEGER, duration INTEGER, total_pages INTEGER)");
+  k.prepare("INSERT INTO book VALUES (1, 'Libro Dropbox Conocido', 'Autora D', 'dbx-1', 200), (2, 'Libro Dropbox Misterioso', 'Autor Q', 'dbx-2', 150)").run();
+  const t0 = Math.floor(new Date(year, 1, 3, 21, 0).getTime() / 1000);
+  for (let p = 1; p <= 12; p++) k.prepare("INSERT INTO page_stat_data VALUES (1, ?, ?, 50, 200)").run(p, t0 + p * 60);
+  for (let p = 1; p <= 6; p++) k.prepare("INSERT INTO page_stat_data VALUES (2, ?, ?, 50, 150)").run(p, t0 + 86_400 + p * 60);
+  k.close();
+  dropboxFake.file = readFileSync(file);
+  dropboxFake.rev = "rev-1";
+
+  const sync1 = await api("POST", "/api/ocio/koreader/sync", {});
+  assert.equal(sync1.status, 200, JSON.stringify(sync1.data));
+  assert.equal(sync1.data.result.changed, true);
+  assert.equal(sync1.data.result.sessionsNew, 1);
+  assert.equal(sync1.data.result.pending, 1);
+  assert.equal((await api("POST", "/api/ocio/koreader/sync", {})).data.result.changed, false, "mismo rev");
+  assert.equal(dropboxFake.downloads, 1);
+  assert.equal((await api("POST", "/api/ocio/koreader/sync", { ifStale: true })).data.result.fresh, true, "recién revisado");
+
+  const status = (await api("GET", "/api/ocio/koreader/status")).data;
+  assert.equal(status.pending, 1);
+  assert.equal(status.dropbox.connected, true);
+
+  const pending = (await api("GET", "/api/ocio/koreader/pending")).data.books;
+  assert.equal(pending[0].title, "Libro Dropbox Misterioso");
+  const resolved = await api("POST", "/api/ocio/koreader/pending", { mapping: { [pending[0].key]: "new" } });
+  assert.equal(resolved.data.created, 1);
+  assert.equal(resolved.data.pending, 0);
+  assert.ok((await api("GET", "/api/ocio/library?type=book")).data.some((b) => b.title === "Libro Dropbox Misterioso"));
+  const sessions = (await api("GET", `/api/ocio/library/${lib.data.item.id}`)).data.sessions;
+  assert.equal(sessions.length, 1);
+
+  // Otra ruta: se valida y obliga a bajar de nuevo.
+  assert.equal((await api("PUT", "/api/ocio/koreader/sync-settings", { path: "/../x" })).status, 400);
+  assert.equal((await api("PUT", "/api/ocio/koreader/sync-settings", { path: "/" })).data.path, "/statistics.sqlite3");
+
+  const off = (await api("POST", "/api/dropbox/disconnect", {})).data;
+  assert.equal(off.connected, false);
 });
