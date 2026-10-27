@@ -124,3 +124,26 @@ test("hoy: la rutina que toca según la agenda y la semana con lo hecho", () => 
   assert.equal(w.days.length, 7);
   assert.equal(w.planned, 7);
 });
+
+test("récords: lista con 1RM, % en 6 semanas y detalle con historial y récord por reps", async () => {
+  const { createRecords } = await import("../src/services/fisico/records.js");
+  const { db, workouts, pull, ex, plans } = setup();
+  const records = createRecords(db, { history: createHistory(db), plans });
+  const curl = ex("Curl con barra").id;
+  const recentDay = (back) => Date.now() - back * 86_400_000;
+  playSession(workouts, pull.id, { at: recentDay(28), edits: { [curl]: { weightKg: 30, reps: [8, 8, 8] } } });
+  playSession(workouts, pull.id, { at: recentDay(14), edits: { [curl]: { weightKg: 30, reps: [9, 8, 8] } } });
+  playSession(workouts, pull.id, { at: recentDay(7), edits: { [curl]: { weightKg: 32.5, reps: [8, 8, 7] } } });
+  const list = records.list();
+  const c = list.find((x) => x.exerciseId === curl);
+  assert.equal(c.bestE1rm.value, 41.2);
+  assert.equal(c.changePct, 8.4, "de 38 a 41,2");
+  assert.equal(c.sparkline.length, 3);
+  const d = records.detail(curl);
+  assert.equal(d.history.length, 3);
+  assert.deepEqual(d.history.map((h) => h.record), [true, true, false], "la primera no cuenta como récord");
+  assert.equal(d.history[0].line, "32,5 × 8, 8, 7");
+  assert.deepEqual(d.byReps.map((r) => [r.reps, r.weightKg]), [[7, 32.5], [8, 32.5], [9, 30]]);
+  assert.equal(records.recent().filter((r) => r.exerciseId === curl).length, 2);
+  assert.equal(records.detail(99999), null);
+});

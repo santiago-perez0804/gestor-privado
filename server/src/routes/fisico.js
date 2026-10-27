@@ -8,6 +8,7 @@ import { createHistory } from "../services/fisico/history.js";
 import { createPlans } from "../services/fisico/plans.js";
 import { createBody } from "../services/fisico/body.js";
 import { createWorkouts } from "../services/fisico/workouts.js";
+import { createRecords } from "../services/fisico/records.js";
 
 export function fisicoServices() {
   const exercises = createExercises(db);
@@ -15,11 +16,12 @@ export function fisicoServices() {
   const plans = createPlans(db, { history });
   const body = createBody(db);
   const workouts = createWorkouts(db, { history, plans, body });
-  return { exercises, history, plans, body, workouts };
+  const records = createRecords(db, { history, plans });
+  return { exercises, history, plans, body, workouts, records };
 }
 
 export default function registerFisicoRoutes(app) {
-  const { exercises, plans, workouts } = fisicoServices();
+  const { exercises, plans, workouts, records } = fisicoServices();
   const B = "/api/fisico";
 
   app.get(`${B}/settings`, handle(() => getSettings(db)));
@@ -59,6 +61,15 @@ export default function registerFisicoRoutes(app) {
   app.put(`${B}/routines/:id/items/order`, handle((req) => plans.reorderItems(req.params.id, req.body?.ids)));
   app.put(`${B}/routine-items/:id`, handle((req) => plans.updateItem(req.params.id, req.body || {})));
   app.delete(`${B}/routine-items/:id`, handle((req) => plans.removeItem(req.params.id)));
+
+  // Récords
+  app.get(`${B}/records`, handle(() => records.list()));
+  app.get(`${B}/records/recent`, handle((req) => records.recent({ days: Number(req.query.days) || 21 })));
+  app.get(`${B}/records/:exerciseId`, handle((req) => {
+    const d = records.detail(req.params.exerciseId);
+    if (!d) throw Object.assign(new Error("not_found"), { status: 404 });
+    return d;
+  }));
 
   // Entreno en vivo
   app.get(`${B}/workout/today`, handle(() => workouts.todayInfo()));

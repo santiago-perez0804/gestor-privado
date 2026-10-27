@@ -13,6 +13,7 @@ export const fisicoRoutes = [
     <Route path="plan" element={<PlanRutinas />} />
     <Route path="plan/:planId" element={<PlanRutinas />} />
     <Route path="records" element={<Records />} />
+    <Route path="records/:exerciseId" element={<Records />} />
     <Route path="progreso" element={<FisicoProgreso />} />
     <Route path="medidas" element={<Medidas />} />
     <Route path="fotos" element={<Fotos />} />

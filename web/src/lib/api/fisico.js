@@ -44,6 +44,10 @@ export const fisicoApi = {
   reorderRoutineItems: (routineId, ids) => put(`/fisico/routines/${routineId}/items/order`, { ids }),
   updateRoutineItem: (id, data) => put(`/fisico/routine-items/${id}`, data),
   deleteRoutineItem: (id) => del(`/fisico/routine-items/${id}`),
+  // récords
+  getRecords: () => get("/fisico/records"),
+  getRecentRecords: (days) => get(`/fisico/records/recent?${toQuery({ days })}`),
+  getRecordDetail: (exerciseId) => get(`/fisico/records/${exerciseId}`),
   // entreno en vivo
   getWorkoutToday: () => get("/fisico/workout/today"),
   getWorkoutStart: (routineId) => get(`/fisico/workout/start?${toQuery({ routineId })}`),
