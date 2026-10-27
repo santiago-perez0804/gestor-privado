@@ -10,6 +10,8 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    // La lógica pura compartida (../shared) vive fuera de web/: hay que dejar que Vite la sirva.
+    fs: { allow: [".."] },
     proxy: {
       "/api": "http://localhost:4000",
       "/photos": "http://localhost:4000",
