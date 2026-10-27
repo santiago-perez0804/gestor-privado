@@ -9,6 +9,7 @@ import { createPlans } from "../services/fisico/plans.js";
 import { createBody } from "../services/fisico/body.js";
 import { createWorkouts } from "../services/fisico/workouts.js";
 import { createRecords } from "../services/fisico/records.js";
+import { createMeasurements } from "../services/fisico/measurements.js";
 
 export function fisicoServices() {
   const exercises = createExercises(db);
@@ -17,11 +18,12 @@ export function fisicoServices() {
   const body = createBody(db);
   const workouts = createWorkouts(db, { history, plans, body });
   const records = createRecords(db, { history, plans });
-  return { exercises, history, plans, body, workouts, records };
+  const measurements = createMeasurements(db);
+  return { exercises, history, plans, body, workouts, records, measurements };
 }
 
 export default function registerFisicoRoutes(app) {
-  const { exercises, plans, workouts, records, body } = fisicoServices();
+  const { exercises, plans, workouts, records, body, measurements } = fisicoServices();
   const B = "/api/fisico";
 
   app.get(`${B}/settings`, handle(() => getSettings(db)));
@@ -65,6 +67,13 @@ export default function registerFisicoRoutes(app) {
   // Peso
   app.get(`${B}/weight`, handle(() => body.summary()));
   app.put(`${B}/goal`, handle((req) => body.setGoal(req.body || {})));
+
+  // Medidas
+  app.get(`${B}/measurements`, handle(() => measurements.summary()));
+  app.post(`${B}/measurements/sessions`, handle((req) => ({ id: measurements.saveSession(req.body || {}) }), 201));
+  app.delete(`${B}/measurements/sessions/:id`, handle((req) => void measurements.removeSession(req.params.id)));
+  app.put(`${B}/measurements/:id`, handle((req) => void measurements.updateValue(req.params.id, req.body || {})));
+  app.delete(`${B}/measurements/:id`, handle((req) => void measurements.removeValue(req.params.id)));
 
   // Récords
   app.get(`${B}/records`, handle(() => records.list()));

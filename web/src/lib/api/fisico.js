@@ -44,6 +44,12 @@ export const fisicoApi = {
   reorderRoutineItems: (routineId, ids) => put(`/fisico/routines/${routineId}/items/order`, { ids }),
   updateRoutineItem: (id, data) => put(`/fisico/routine-items/${id}`, data),
   deleteRoutineItem: (id) => del(`/fisico/routine-items/${id}`),
+  // medidas
+  getMeasurements: () => get("/fisico/measurements"),
+  saveMeasurementSession: (data) => post("/fisico/measurements/sessions", data),
+  deleteMeasurementSession: (id) => del(`/fisico/measurements/sessions/${id}`),
+  updateMeasurement: (id, data) => put(`/fisico/measurements/${id}`, data),
+  deleteMeasurement: (id) => del(`/fisico/measurements/${id}`),
   // peso
   getWeightSummary: () => get("/fisico/weight"),
   setWeightGoal: (data) => put("/fisico/goal", data),
@@ -69,17 +75,17 @@ export const fisicoApi = {
   updateExerciseLog: (id, data) => put(`/exercise-logs/${id}`, data),
   deleteExerciseLog: (id) => del(`/exercise-logs/${id}`),
 
+  // medidas
+  getMeasurements: () => get("/fisico/measurements"),
+  saveMeasurementSession: (data) => post("/fisico/measurements/sessions", data),
+  deleteMeasurementSession: (id) => del(`/fisico/measurements/sessions/${id}`),
+  updateMeasurement: (id, data) => put(`/fisico/measurements/${id}`, data),
+  deleteMeasurement: (id) => del(`/fisico/measurements/${id}`),
   // peso
   getWeightSummary: () => get("/fisico/weight"),
   setWeightGoal: (data) => put("/fisico/goal", data),
   // récords personales
   getExerciseRecords: (params) => get(`/exercise-logs/records?${toQuery(params)}`),
-
-  // medidas corporales
-  getMeasurements: (params) => get(`/body-measurements?${toQuery(params)}`),
-  addMeasurement: (data) => post("/body-measurements", data),
-  updateMeasurement: (id, data) => put(`/body-measurements/${id}`, data),
-  deleteMeasurement: (id) => del(`/body-measurements/${id}`),
 
   // fotos de progreso
   getProgressPhotos: () => get("/progress-photos"),

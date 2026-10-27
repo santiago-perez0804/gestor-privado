@@ -40,3 +40,29 @@ test("peso: sin pesadas no rompe; con pesadas da tendencia, ritmo, meta y proyec
   assert.equal(hard.neededStatus, "fast");
   assert.ok(hard.healthyDate > addDays(today, 21));
 });
+
+test("medidas: sesión guiada, dirección por zona, relaciones, próxima y borrar", async () => {
+  const { createMeasurements } = await import("../src/services/fisico/measurements.js");
+  const { saveSettings } = await import("../src/services/fisico/common.js");
+  const { db } = setup();
+  const m = createMeasurements(db);
+  assert.equal(m.summary().next.never, true);
+  m.saveSession({ measuredOn: "2026-09-23", values: { cintura: 98, brazo: 36, hombros: 120 } });
+  const id = m.saveSession({ measuredOn: "2026-10-21", values: { cintura: 96.5, brazo: 36.5, hombros: 121.5, muslo: "" } });
+  assert.throws(() => m.saveSession({ values: { cintura: 2 } }), { message: "invalid_value" });
+  assert.throws(() => m.saveSession({ values: { nariz: 30 } }), { message: "invalid_zone" });
+  assert.throws(() => m.saveSession({ values: {} }), { message: "values_required" });
+  const s = m.summary();
+  const zone = (z) => s.zones.find((x) => x.zone === z);
+  assert.equal(zone("cintura").trend.verdict, "good", "cintura que baja");
+  assert.equal(zone("brazo").trend.verdict, "good");
+  assert.equal(zone("muslo").series.length, 0, "vacía no se guarda");
+  assert.equal(s.ratios.shouldersToWaist, 1.26);
+  assert.equal(s.ratios.waistToHeight, null);
+  assert.equal(s.next.date, "2026-11-04");
+  saveSettings(db, { heightCm: 180 });
+  assert.equal(m.summary().ratios.waistToHeight, 0.54);
+  assert.throws(() => saveSettings(db, { heightCm: 20 }), { message: "invalid_height" });
+  m.removeSession(id);
+  assert.equal(m.summary().sessions.length, 1);
+});
