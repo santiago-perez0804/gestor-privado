@@ -64,7 +64,7 @@ app.use(securityHeaders);
 app.use(requestGuard());
 // CORS solo para el front de desarrollo (Vite); la app y el widget se sirven desde el mismo origen.
 app.use(cors({ origin: DEV_ORIGINS }));
-app.use(express.json());
+app.use(express.json({ limit: "1mb" }));
 app.use(basicAuth);
 app.use("/photos", express.static(photosDir));
 app.use("/certificates", express.static(certificatesDir));

@@ -6,16 +6,20 @@ import { getSettings, saveSettings } from "../services/fisico/common.js";
 import { createExercises } from "../services/fisico/exercises.js";
 import { createHistory } from "../services/fisico/history.js";
 import { createPlans } from "../services/fisico/plans.js";
+import { createBody } from "../services/fisico/body.js";
+import { createWorkouts } from "../services/fisico/workouts.js";
 
 export function fisicoServices() {
   const exercises = createExercises(db);
   const history = createHistory(db);
   const plans = createPlans(db, { history });
-  return { exercises, history, plans };
+  const body = createBody(db);
+  const workouts = createWorkouts(db, { history, plans, body });
+  return { exercises, history, plans, body, workouts };
 }
 
 export default function registerFisicoRoutes(app) {
-  const { exercises, plans } = fisicoServices();
+  const { exercises, plans, workouts } = fisicoServices();
   const B = "/api/fisico";
 
   app.get(`${B}/settings`, handle(() => getSettings(db)));
@@ -55,4 +59,16 @@ export default function registerFisicoRoutes(app) {
   app.put(`${B}/routines/:id/items/order`, handle((req) => plans.reorderItems(req.params.id, req.body?.ids)));
   app.put(`${B}/routine-items/:id`, handle((req) => plans.updateItem(req.params.id, req.body || {})));
   app.delete(`${B}/routine-items/:id`, handle((req) => plans.removeItem(req.params.id)));
+
+  // Entreno en vivo
+  app.get(`${B}/workout/today`, handle(() => workouts.todayInfo()));
+  app.get(`${B}/workout/start`, handle((req) => workouts.startData({ routineId: req.query.routineId })));
+  app.get(`${B}/workout/exercise/:id`, handle((req) => workouts.exerciseData(req.params.id)));
+  app.get(`${B}/week`, handle((req) => workouts.week(req.query.day)));
+  app.get(`${B}/sessions`, handle((req) => workouts.list(req.query)));
+  app.get(`${B}/sessions/in-progress`, handle(() => workouts.inProgress()));
+  app.get(`${B}/sessions/:id`, handle((req) => workouts.get(req.params.id)));
+  app.get(`${B}/sessions/:id/summary`, handle((req) => workouts.summary(req.params.id)));
+  // Snapshot completo e idempotente (la versión más nueva gana).
+  app.put(`${B}/sessions/:id`, handle((req) => workouts.upsert(req.params.id, req.body || {})));
 }

@@ -1,11 +1,14 @@
-import { useCallback, useMemo, useState } from "react";
-import { Outlet, useLocation } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link, Outlet, useLocation } from "react-router-dom";
+import { Play } from "lucide-react";
 import { ErrorBoundary } from "../../components/common/ErrorBoundary.jsx";
 import { ModuleTabStrip } from "../../components/common/ModuleTabStrip.jsx";
 import { useSidebarBadges } from "../../components/common/AppShell.jsx";
 import { useApi } from "../../hooks/useApi.js";
 import { api } from "../../lib/api.js";
 import { FisicoContext } from "./FisicoContext.jsx";
+import { localInProgress } from "../../lib/fisico/workoutDevice.js";
+import { flushFinishedWorkout } from "./Entreno.jsx";
 
 // Pantallas ya rediseñadas (ocupan todo el ancho); el resto conserva la columna angosta de antes.
 const REDESIGNED = ["/fisico/plan"];
@@ -25,10 +28,23 @@ export function FisicoLayout() {
   useSidebarBadges(active ? { plan: planTag(active.name) } : {});
 
   const value = useMemo(() => ({ version, bump, settings: settingsApi.data }), [version, bump, settingsApi.data]);
+  // Un entreno en curso en este celular: acceso directo para volver. Uno terminado sin subir: se sube.
+  const [running, setRunning] = useState(null);
+  useEffect(() => {
+    setRunning(localInProgress());
+    flushFinishedWorkout()
+      .then((uploaded) => uploaded && bump())
+      .catch(() => {});
+  }, [pathname, bump]);
   return (
     <FisicoContext.Provider value={value}>
       <div className="fisico-layout">
         <ModuleTabStrip moduleId="fisico" />
+        {running && (
+          <Link to="/fisico/entreno" className="flex items-center gap-2.5 rounded-xl px-4 py-3 mb-4 lg:m-4 text-sm font-semibold" style={{ background: "var(--accent)", color: "var(--on-accent)" }}>
+            <Play size={16} /> Volver al entreno: {running.title}
+          </Link>
+        )}
         <ErrorBoundary resetKey={pathname}>
           {isRedesigned(pathname) ? (
             <Outlet />

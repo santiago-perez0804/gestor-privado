@@ -532,3 +532,34 @@ test("Físico: plan, rutina, ejercicios (biblioteca propia, grande e importada),
   assert.equal((await api("DELETE", `/api/fisico/plans/${copy.data.id}`)).status, 204);
   assert.equal((await api("GET", "/api/plans")).status, 200, "la lista simple (widget) sigue andando");
 });
+
+test("Físico: entreno en vivo por HTTP (empezar, guardar idempotente, versión vieja, resumen, retomar)", async () => {
+  const { initWorkout, workoutReducer, toSnapshot } = await import("../../../shared/fisico/workout.js");
+  const curl = (await api("GET", "/api/fisico/exercises?q=curl%20con%20barra")).data[0];
+  const plan = (await api("POST", "/api/fisico/plans", { name: "Plan entreno" })).data;
+  const routine = (await api("POST", `/api/fisico/plans/${plan.id}/routines`, { name: "Brazos" })).data;
+  await api("POST", `/api/fisico/routines/${routine.id}/items`, { exerciseId: curl.id, sets: 3, repMin: 6, repMax: 8 });
+  const start = await api("GET", `/api/fisico/workout/start?routineId=${routine.id}`);
+  assert.equal(start.status, 200);
+  let k = 0;
+  const newId = () => `it-session-${String(++k).padStart(4, "0")}`;
+  let s = initWorkout(start.data, { now: Date.parse("2026-10-27T21:00:00Z"), newId });
+  for (const set of s.sets) {
+    s = workoutReducer(s, { type: "edit", setId: set.id, field: "weightKg", value: 30, now: Date.parse("2026-10-27T21:01:00Z") });
+    s = workoutReducer(s, { type: "toggleDone", setId: set.id, now: Date.parse("2026-10-27T21:02:00Z") });
+  }
+  const first = await api("PUT", `/api/fisico/sessions/${s.session.id}`, toSnapshot(s));
+  assert.equal(first.status, 200);
+  assert.equal((await api("PUT", `/api/fisico/sessions/${s.session.id}`, toSnapshot(s))).data.session.sets.length, 3, "idempotente");
+  assert.equal((await api("GET", "/api/fisico/sessions/in-progress")).data.id, s.session.id, "se puede retomar desde otro dispositivo");
+  const old = toSnapshot(s);
+  s = workoutReducer(s, { type: "finish", now: Date.parse("2026-10-27T22:00:00Z") });
+  await api("PUT", `/api/fisico/sessions/${s.session.id}`, toSnapshot(s));
+  assert.equal((await api("PUT", `/api/fisico/sessions/${s.session.id}`, old)).data.stale, true, "reintento atrasado: no pisa el terminado");
+  const summary = (await api("GET", `/api/fisico/sessions/${s.session.id}/summary`)).data;
+  assert.deepEqual([summary.status, summary.durationMin, summary.workingSets, summary.volumeKg], ["done", 60, 3, 30 * 6 * 3], "primera vez: arranca en el mínimo del rango");
+  assert.equal((await api("GET", "/api/fisico/sessions/in-progress")).data, null);
+  const next = (await api("GET", `/api/fisico/workout/start?routineId=${routine.id}`)).data.exercises[0];
+  assert.equal(next.previous.sets.length, 3, "la próxima vez muestra lo de hoy como anterior");
+  assert.equal((await api("PUT", "/api/fisico/sessions/corto", toSnapshot(s))).status, 400);
+});

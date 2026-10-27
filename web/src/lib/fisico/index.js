@@ -11,3 +11,4 @@ export * from "../../../../shared/fisico/weight.js";
 export * from "../../../../shared/fisico/measurements.js";
 export * from "../../../../shared/fisico/habits.js";
 export * from "../../../../shared/fisico/recomposition.js";
+export * from "../../../../shared/fisico/workout.js";

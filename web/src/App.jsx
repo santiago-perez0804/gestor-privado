@@ -9,15 +9,18 @@ import { gastosRoutes } from "./pages/gastos/routes.jsx";
 import { ocioRoutes } from "./pages/ocio/routes.jsx";
 import { proyectosRoutes } from "./pages/proyectos/routes.jsx";
 import { ModoMuseo } from "./pages/ocio/ModoMuseo.jsx";
+import { Entreno } from "./pages/fisico/Entreno.jsx";
 
 export default function App() {
   const { pathname } = useLocation();
   // Modo museo: pantalla completa sin el marco de la app (también sirve como widget de escritorio).
-  if (pathname === "/museo")
+  // Entreno en vivo: también a pantalla completa (es la pantalla del celular en el gym).
+  if (pathname === "/museo" || pathname === "/fisico/entreno")
     return (
       <ErrorBoundary resetKey={pathname}>
         <Routes>
           <Route path="/museo" element={<ModoMuseo />} />
+          <Route path="/fisico/entreno" element={<Entreno />} />
         </Routes>
       </ErrorBoundary>
     );
