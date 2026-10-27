@@ -26,6 +26,25 @@ const parse = (text, fallback) => {
   }
 };
 const nowIso = () => new Date().toISOString();
+const badRequest = (msg) => Object.assign(new Error(msg), { status: 400 });
+const notFound = () => Object.assign(new Error("not_found"), { status: 404 });
+
+/** Fecha YYYY-MM-DD de calendario real, o null si viene vacía. */
+function cleanDate(value, field) {
+  if (value == null || value === "") return null;
+  const s = String(value).slice(0, 10);
+  const d = new Date(`${s}T00:00:00Z`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s) || Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== s) throw badRequest(`invalid_${field}`);
+  return s;
+}
+
+/** Puntuación válida: vacía, o de 0,5 a 5 en pasos de media estrella. */
+function cleanRating(value) {
+  if (value == null || value === "") return null;
+  const n = Number(value);
+  if (!(n >= 0.5 && n <= 5 && Number.isInteger(n * 2))) throw badRequest("invalid_rating");
+  return n;
+}
 const pad = (n) => String(n).padStart(2, "0");
 /** Fecha local de hoy (YYYY-MM-DD): las fechas de inicio/fin son del día en tu zona horaria. */
 export function todayLocal(d = new Date()) {
@@ -208,7 +227,7 @@ export function createLibrary(db) {
     if (!ENTRY_STATUSES.includes(next)) throw Object.assign(new Error("invalid_status"), { status: 400 });
     const entry = q.entry.get(entryId);
     if (!entry) throw Object.assign(new Error("not_found"), { status: 404 });
-    const day = date || todayLocal();
+    const day = cleanDate(date, "date") || todayLocal();
     const ts = nowIso();
     const passes = q.passesOf.all(entryId);
     const open = passes.filter((p) => p.status === "in_progress").at(-1);
@@ -243,7 +262,8 @@ export function createLibrary(db) {
   }
 
   /** Releer / volver a ver: una pasada nueva (la anterior queda en el historial). */
-  function reread(entryId, { date } = {}) {
+  function reread(entryId, { date: rawDate } = {}) {
+    const date = cleanDate(rawDate, "date");
     const entry = q.entry.get(entryId);
     if (!entry) throw Object.assign(new Error("not_found"), { status: 404 });
     const passes = q.passesOf.all(entryId);
@@ -262,6 +282,7 @@ export function createLibrary(db) {
   }
 
   function updateEntry(entryId, patch = {}) {
+    if (patch.rating !== undefined) patch = { ...patch, rating: cleanRating(patch.rating) };
     const entry = q.entry.get(entryId);
     if (!entry) throw Object.assign(new Error("not_found"), { status: 404 });
     db.exec("BEGIN");
@@ -291,7 +312,8 @@ export function createLibrary(db) {
     const pass = q.pass.get(passId);
     if (!pass) throw Object.assign(new Error("not_found"), { status: 404 });
     const merged = { ...pass, progress: parse(pass.progress, {}) };
-    for (const k of ["startedAt", "finishedAt", "dropReason"]) if (patch[k] !== undefined) merged[k] = patch[k];
+    for (const k of ["startedAt", "finishedAt"]) if (patch[k] !== undefined) merged[k] = cleanDate(patch[k], k);
+    if (patch.dropReason !== undefined) merged.dropReason = patch.dropReason;
     if (patch.progress) merged.progress = { ...merged.progress, ...patch.progress };
     db.prepare("UPDATE passes SET startedAt=?, finishedAt=?, dropReason=?, progress=?, updatedAt=? WHERE id=?").run(
       merged.startedAt,
@@ -311,7 +333,9 @@ export function createLibrary(db) {
    * @param {{ work: object, entry?: object, pass?: { startedAt?: string, finishedAt?: string, progress?: Progress }, review?: { text: string, hasSpoilers?: boolean } }} input
    * @returns {{ item: LibraryItem, existed: boolean }}
    */
-  function add({ work, entry = {}, pass, review }) {
+  function add({ work, entry = {}, pass, review } = {}) {
+    if (!work || typeof work !== "object") throw badRequest("work_required");
+    if (entry.rating !== undefined) entry = { ...entry, rating: cleanRating(entry.rating) };
     const duplicate = findDuplicate(work);
     const ts = nowIso();
     let entryId;
@@ -363,6 +387,7 @@ export function createLibrary(db) {
 
   // ---------- reseñas, subrayados, metas ----------
   function addReview(entryId, { text, hasSpoilers = false }) {
+    if (!q.entry.get(entryId)) throw notFound();
     const ts = nowIso();
     const passes = q.passesOf.all(entryId);
     const passId = passes.at(-1)?.id ?? null;
@@ -385,8 +410,9 @@ export function createLibrary(db) {
     return db.prepare("SELECT * FROM reviews WHERE id = ?").get(id);
   }
 
-  function addHighlight(workId, { text, location, note, source = "manual" }) {
-    if (!text?.trim()) throw Object.assign(new Error("text_required"), { status: 400 });
+  function addHighlight(workId, { text, location, note, source = "manual" } = {}) {
+    if (!text?.trim()) throw badRequest("text_required");
+    if (!db.prepare("SELECT 1 FROM works WHERE id = ?").get(workId)) throw notFound();
     const id = db
       .prepare("INSERT INTO highlights (workId, text, location, note, source, createdAt) VALUES (?, ?, ?, ?, ?, ?)")
       .run(workId, text.trim(), location ?? null, note ?? null, source, nowIso()).lastInsertRowid;
@@ -417,6 +443,8 @@ export function createLibrary(db) {
   }
 
   function setGoal(year, type, target) {
+    if (![...WORK_TYPES, "outing"].includes(type)) throw badRequest("invalid_type");
+    if (!Number.isInteger(year) || !Number.isInteger(target) || target < 0) throw badRequest("invalid_goal");
     if (!target) db.prepare("DELETE FROM ocio_goals WHERE year = ? AND type = ?").run(year, type);
     else db.prepare("INSERT INTO ocio_goals (year, type, target) VALUES (?, ?, ?) ON CONFLICT(year, type) DO UPDATE SET target = excluded.target").run(year, type, target);
     return goals(year);

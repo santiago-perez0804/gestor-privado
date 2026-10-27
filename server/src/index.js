@@ -11,6 +11,7 @@ import { generateDueRecurringExpenses, generateDueRecurringIncomes } from "./ser
 import { startDailyBackups } from "./services/backup.js";
 import { startInstagramSync } from "./services/instagramSync.js";
 import { basicAuth } from "./middleware/basicAuth.js";
+import { requestGuard, securityHeaders, DEV_ORIGINS } from "./middleware/requestGuard.js";
 
 import registerWeightsRoutes from "./routes/weights.js";
 import registerSettingsRoutes from "./routes/settings.js";
@@ -58,7 +59,10 @@ startInstagramSync();
 google().start();
 
 const app = express();
-app.use(cors());
+app.use(securityHeaders);
+app.use(requestGuard());
+// CORS solo para el front de desarrollo (Vite); la app y el widget se sirven desde el mismo origen.
+app.use(cors({ origin: DEV_ORIGINS }));
 app.use(express.json());
 app.use(basicAuth);
 app.use("/photos", express.static(photosDir));
@@ -106,6 +110,12 @@ if (existsSync(webDistPath)) {
 }
 
 app.use((err, req, res, next) => {
+  // Datos inválidos que frena la base (CHECK, UNIQUE, FOREIGN KEY): es un error del pedido, no del server.
+  if (err.code === "ERR_SQLITE_ERROR" && /constraint failed/i.test(err.message)) {
+    return res.status(/UNIQUE/i.test(err.message) ? 409 : 400).json({ error: err.message });
+  }
+  // JSON mal formado en el cuerpo del pedido.
+  if (err.type === "entity.parse.failed") return res.status(400).json({ error: "invalid_json" });
   console.error(err);
   res.status(500).json({ error: err.message || "internal_error" });
 });

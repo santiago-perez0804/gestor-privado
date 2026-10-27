@@ -16,12 +16,42 @@ export function sniffImage(buf) {
 }
 
 /**
+ * Solo se bajan portadas de los servidores de imágenes de los catálogos (y por HTTPS). Así el
+ * server no puede usarse para pedir otras direcciones (la red de la casa, localhost, etc.): la URL
+ * de la portada viene del navegador y no hay que confiar en ella.
+ */
+const COVER_HOSTS = ["image.tmdb.org", "covers.openlibrary.org", "archive.org", "books.google.com", "books.googleusercontent.com", "media.rawg.io"];
+export function isAllowedCoverUrl(url) {
+  let u;
+  try {
+    u = new URL(url);
+  } catch {
+    return false;
+  }
+  const host = u.hostname.toLowerCase();
+  return u.protocol === "https:" && !u.username && !u.password && (u.port === "" || u.port === "443") && COVER_HOSTS.some((h) => host === h || host.endsWith(`.${h}`));
+}
+
+/**
  * Descarga `url` y la guarda como `<workId>-<hash>.<ext>`. Devuelve el nombre del archivo
- * (relativo a coversDir) o null si no es una imagen válida.
+ * (relativo a coversDir) o null si no es una imagen válida o el origen no está permitido.
+ * Las redirecciones se siguen a mano (Open Library redirige a archive.org) y cada salto se
+ * vuelve a validar.
  */
 export async function downloadCover(url, workId, coversDir, { fetchImpl = fetch, timeoutMs = 10_000 } = {}) {
-  const res = await fetchImpl(url, { signal: AbortSignal.timeout(timeoutMs) });
-  if (!res.ok) return null;
+  let current = String(url || "");
+  let res = null;
+  for (let hop = 0; hop < 4; hop++) {
+    if (!isAllowedCoverUrl(current)) return null;
+    res = await fetchImpl(current, { signal: AbortSignal.timeout(timeoutMs), redirect: "manual" });
+    const location = res.status >= 300 && res.status < 400 ? res.headers.get("location") : null;
+    if (!location) break;
+    current = new URL(location, current).toString();
+    res = null;
+  }
+  if (!res?.ok) return null;
+  const declared = Number(res.headers.get("content-length"));
+  if (declared > MAX_BYTES) return null;
   const buf = Buffer.from(await res.arrayBuffer());
   if (!buf.length || buf.length > MAX_BYTES) return null;
   const ext = sniffImage(buf);

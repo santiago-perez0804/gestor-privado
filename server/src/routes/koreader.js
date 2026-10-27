@@ -1,7 +1,7 @@
 // Importar estadísticas de KOReader: 1) subir el archivo → vista previa con el vínculo de cada
 // libro; 2) confirmar el mapeo → importar. El archivo queda en data/imports.
 import multer from "multer";
-import { openSync, readSync, closeSync, renameSync, existsSync } from "node:fs";
+import { openSync, readSync, closeSync, renameSync, existsSync, readdirSync, statSync, unlinkSync } from "node:fs";
 import { join, basename } from "node:path";
 import { db, importsDir } from "../db/index.js";
 import { createLibrary } from "../services/ocio/library.js";
@@ -21,6 +21,28 @@ function isSqlite(path) {
   }
 }
 
+/** Borra sin quejarse (el archivo puede no existir o estar en uso). */
+function removeQuietly(path) {
+  try {
+    unlinkSync(path);
+  } catch {
+    // nada
+  }
+}
+
+/** Las vistas previas que nunca se importaron no se acumulan: se borran las de más de un día. */
+function cleanOldImports(maxAgeMs = 24 * 60 * 60 * 1000) {
+  const now = Date.now();
+  for (const f of readdirSync(importsDir)) {
+    const p = join(importsDir, f);
+    try {
+      if (now - statSync(p).mtimeMs > maxAgeMs) removeQuietly(p);
+    } catch {
+      // nada
+    }
+  }
+}
+
 /** Libros para la vista previa (sin el detalle de cada sesión). */
 const preview = (books) =>
   books.map(({ sessions, ...b }) => ({ ...b, sessionCount: sessions.length }));
@@ -30,12 +52,26 @@ export default function registerKoreaderRoutes(app) {
 
   app.post("/api/ocio/koreader/preview", upload.single("file"), (req, res) => {
     if (!req.file) return res.status(400).json({ error: "file_required" });
-    if (!isSqlite(req.file.path)) return res.status(422).json({ error: "not_sqlite", message: "El archivo no es una base de KOReader (statistics.sqlite3)." });
+    cleanOldImports();
+    if (!isSqlite(req.file.path)) {
+      removeQuietly(req.file.path);
+      return res.status(422).json({ error: "not_sqlite", message: "El archivo no es una base de KOReader (statistics.sqlite3)." });
+    }
     const importId = `koreader-${Date.now()}.sqlite3`;
     renameSync(req.file.path, join(importsDir, importId));
     const gap = Number(req.body?.gapMinutes) || DEFAULT_GAP_MINUTES;
-    const { schema, books } = readKoreader(join(importsDir, importId), { gapMinutes: gap });
-    if (!schema.ok) return res.status(422).json({ error: "unexpected_schema", schema, message: `Al archivo le faltan columnas: ${schema.missing.join(", ")}.` });
+    let read;
+    try {
+      read = readKoreader(join(importsDir, importId), { gapMinutes: gap });
+    } catch (err) {
+      removeQuietly(join(importsDir, importId));
+      return res.status(422).json({ error: "unreadable_file", message: `No se pudo leer el archivo (${err.message}).` });
+    }
+    const { schema, books } = read;
+    if (!schema.ok) {
+      removeQuietly(join(importsDir, importId));
+      return res.status(422).json({ error: "unexpected_schema", schema, message: `Al archivo le faltan columnas: ${schema.missing.join(", ")}.` });
+    }
     res.json({ importId, schema, gapMinutes: gap, books: preview(matchBooks(db, books)) });
   });
 

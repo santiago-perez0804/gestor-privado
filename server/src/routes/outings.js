@@ -10,7 +10,13 @@ import { todayLocal } from "../services/ocio/library.js";
 import { google } from "../services/google/index.js";
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
-const TIME = /^\d{2}:\d{2}$/;
+const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
+/** Fecha de calendario real (2026-02-30 o 2026-13-45 no). */
+function realDate(s) {
+  if (!DATE.test(s || "")) return false;
+  const d = new Date(`${s}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
+}
 const FIELDS = ["title", "category", "date", "startTime", "endTime", "allDay", "place", "withWhom", "notes", "status", "icon"];
 const bad = (msg) => Object.assign(new Error(msg), { status: 400 });
 
@@ -22,7 +28,7 @@ export function cleanOuting(input, { partial = false } = {}) {
     if (!out.title?.trim()) throw bad("title_required");
     out.title = out.title.trim();
   }
-  if (!partial || "date" in out) if (!DATE.test(out.date || "")) throw bad("date_required");
+  if (!partial || "date" in out) if (!realDate(out.date)) throw bad(out.date ? "invalid_date" : "date_required");
   if (out.status != null && !OUTING_STATUSES.includes(out.status)) throw bad("invalid_status");
   if (out.category != null && !OUTING_CATEGORIES.includes(out.category)) throw bad("invalid_category");
   for (const k of ["startTime", "endTime"]) if (out[k] != null && !TIME.test(out[k])) throw bad(`invalid_${k}`);

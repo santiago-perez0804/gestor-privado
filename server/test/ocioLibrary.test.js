@@ -83,7 +83,7 @@ test("puntuación con medias estrellas; reseña y progreso", () => {
   const { lib } = freshLibrary();
   const { item } = lib.add({ work: book(), entry: { status: "in_progress", rating: 4.5 }, review: { text: "Más actual de lo que esperaba.", hasSpoilers: false } });
   assert.equal(item.rating, 4.5);
-  assert.throws(() => lib.updateEntry(item.id, { rating: 4.3 }), /CHECK/);
+  assert.throws(() => lib.updateEntry(item.id, { rating: 4.3 }), { message: "invalid_rating" });
   const progressed = lib.updatePass(item.currentPass.id, { progress: { unit: "page", current: 142, total: 256 } });
   assert.deepEqual(progressed.currentPass.progress, { unit: "page", current: 142, total: 256 });
   const d = lib.detail(item.id);
@@ -119,4 +119,31 @@ test("duplicados por título: el original cuenta y un homónimo de otro autor no
   assert.equal(lib.findDuplicate({ type: "book", title: "Brave New World", originalTitle: "Un mundo feliz", creators: ["Aldous Huxley"] })?.id, item.id);
   assert.equal(lib.findDuplicate({ type: "book", title: "Un mundo feliz", creators: ["Manuel Aguirre"] }), null, "otro autor: es otro libro");
   assert.equal(lib.findDuplicate({ type: "book", title: "Un mundo feliz" })?.match, "title");
+});
+
+test("validaciones: puntuación, obra faltante, reseñas y subrayados de algo que no existe, metas", () => {
+  const db = new DatabaseSync(":memory:");
+  db.exec("PRAGMA foreign_keys = ON");
+  db.exec(gastosSchema);
+  db.exec(ocioSchema);
+  migrateOcioV2(db);
+  const lib = createLibrary(db);
+  assert.throws(() => lib.add({}), { message: "work_required" });
+  assert.throws(() => lib.add({ work: { type: "book", title: "X" }, entry: { rating: 7 } }), { message: "invalid_rating" });
+  assert.throws(() => lib.add({ work: { type: "book", title: "X" }, entry: { rating: 3.3 } }), { message: "invalid_rating" });
+  const { item } = lib.add({ work: { type: "book", title: "X" }, entry: { rating: "4.5" } });
+  assert.equal(item.rating, 4.5);
+  assert.equal(lib.updateEntry(item.id, { rating: "" }).rating, null, "vacía = sin puntuación");
+  assert.throws(() => lib.updateEntry(item.id, { rating: 0 }), { message: "invalid_rating" });
+  assert.throws(() => lib.addReview(9999, { text: "hola" }), { message: "not_found" });
+  assert.throws(() => lib.addHighlight(9999, { text: "hola" }), { message: "not_found" });
+  assert.throws(() => lib.setGoal(2026, "comic", 3), { message: "invalid_type" });
+  assert.throws(() => lib.setGoal(2026, "book", 2.5), { message: "invalid_goal" });
+  assert.deepEqual(lib.setGoal(2026, "book", 0), [], "0 borra la meta");
+  const passId = lib.updateEntry(item.id, { status: "in_progress" }).currentPass.id;
+  assert.throws(() => lib.updatePass(passId, { finishedAt: "2026-13-01" }), { message: "invalid_finishedAt" });
+  assert.throws(() => lib.updatePass(passId, { startedAt: "2026-02-30" }), { message: "invalid_startedAt" });
+  assert.equal(lib.updatePass(passId, { startedAt: "2026-02-03T10:00:00Z" }).currentPass.startedAt, "2026-02-03", "se queda con el día");
+  assert.throws(() => lib.updateEntry(item.id, { status: "done", statusDate: "ayer" }), { message: "invalid_date" });
+  assert.throws(() => lib.reread(item.id, { date: "31/12/2026" }), { message: "invalid_date" });
 });

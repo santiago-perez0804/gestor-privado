@@ -92,7 +92,10 @@ export function createOcioStats(db, lib) {
     const done = finishedOfYear(year);
     const outings = activeOutings(db).filter((o) => o.date.startsWith(String(year)) && o.status !== "not_attended");
     const outingsMonthly = Array(12).fill(0);
-    for (const o of outings) outingsMonthly[Number(o.date.slice(5, 7)) - 1] += 1;
+    for (const o of outings) {
+      const m = Number(o.date.slice(5, 7)) - 1;
+      if (m >= 0 && m < 12) outingsMonthly[m] += 1; // una fecha rota no desarma el gráfico
+    }
     return {
       finishedCount: countByType(done),
       totalFinished: done.length,

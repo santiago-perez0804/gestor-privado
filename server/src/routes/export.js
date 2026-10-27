@@ -30,6 +30,7 @@ export default function registerExportRoutes(app) {
       reviews: db.prepare("SELECT * FROM reviews ORDER BY id ASC").all(),
       highlights: db.prepare("SELECT * FROM highlights ORDER BY id ASC").all(),
       readingSessions: db.prepare("SELECT * FROM reading_sessions ORDER BY startTime ASC").all(),
+      koreaderBooks: db.prepare("SELECT * FROM koreader_books ORDER BY key ASC").all(),
       artworks: db.prepare("SELECT * FROM artworks ORDER BY id ASC").all(),
       ocioGoals: db.prepare("SELECT * FROM ocio_goals").all(),
       outings: db.prepare("SELECT * FROM outings ORDER BY date ASC").all(),

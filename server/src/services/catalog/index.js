@@ -19,6 +19,7 @@ export function createCatalog(db) {
   const cache = createCache(db);
 
   async function catalogSearch(type, query) {
+    if (!(type in catalogStatus()) || type === "googleBooks") throw Object.assign(new Error("invalid_type"), { status: 400 });
     const q = String(query || "").trim();
     if (q.length < 2) return { results: [], configured: true, errors: [] };
     if (!catalogStatus()[type]) return { results: [], configured: false, missingKey: MISSING_KEY[type], errors: [] };

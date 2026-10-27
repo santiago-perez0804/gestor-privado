@@ -8,7 +8,7 @@ import { fetchJson, createLimiter, backoffDelay, createCache, cached, CatalogErr
 import { normalizeTmdb } from "../src/services/catalog/tmdb.js";
 import { normalizeOpenLibrary, normalizeGoogleBook, mergeBooks } from "../src/services/catalog/books.js";
 import { normalizeRawg } from "../src/services/catalog/rawg.js";
-import { sniffImage, downloadCover } from "../src/services/catalog/covers.js";
+import { sniffImage, downloadCover, isAllowedCoverUrl } from "../src/services/catalog/covers.js";
 import { ocioSchema } from "../src/db/schema/ocio.js";
 
 /** fetch falso que devuelve las respuestas en orden. */
@@ -133,13 +133,34 @@ test("portadas: valida que sea una imagen y la guarda en disco", async () => {
   try {
     const jpg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(200, 7)]);
     const ok = fakeFetch([{ status: 200, bytes: jpg }]);
-    const name = await downloadCover("https://x/c.jpg", 42, dir, { fetchImpl: ok.impl });
+    const name = await downloadCover("https://image.tmdb.org/t/p/w500/c.jpg", 42, dir, { fetchImpl: ok.impl });
     assert.match(name, /^42-[0-9a-f]{10}\.jpg$/);
     assert.deepEqual(readdirSync(dir), [name]);
     const html = fakeFetch([{ status: 200, bytes: Buffer.from("<!doctype html>") }]);
-    assert.equal(await downloadCover("https://x/c.jpg", 43, dir, { fetchImpl: html.impl }), null, "un HTML no se guarda");
+    assert.equal(await downloadCover("https://image.tmdb.org/t/p/w500/c.jpg", 43, dir, { fetchImpl: html.impl }), null, "un HTML no se guarda");
     const pixel = fakeFetch([{ status: 200, bytes: Buffer.from("GIF89a" + "x".repeat(30)) }]);
-    assert.equal(await downloadCover("https://x/c.gif", 44, dir, { fetchImpl: pixel.impl }), null, "el GIF de 1x1 de 'sin portada' no sirve");
+    assert.equal(await downloadCover("https://covers.openlibrary.org/b/id/1-L.jpg", 44, dir, { fetchImpl: pixel.impl }), null, "el GIF de 1x1 de 'sin portada' no sirve");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("portadas: solo de los catálogos y por HTTPS (nada de la red local), también tras redirecciones", async () => {
+  for (const ok of ["https://image.tmdb.org/t/p/w500/a.jpg", "https://covers.openlibrary.org/b/id/1-L.jpg", "https://ia800.us.archive.org/x.jpg", "https://books.google.com/books/content?id=1", "https://media.rawg.io/media/g.jpg"]) assert.ok(isAllowedCoverUrl(ok), ok);
+  for (const bad of ["http://image.tmdb.org/a.jpg", "https://localhost/a.jpg", "https://192.168.0.1/a.jpg", "https://169.254.169.254/latest", "https://image.tmdb.org.evil.com/a.jpg", "https://evilarchive.org/a.jpg", "https://user:pw@image.tmdb.org/a.jpg", "https://image.tmdb.org:8080/a.jpg", "file:///C:/x.jpg", "nada"]) assert.equal(isAllowedCoverUrl(bad), false, bad);
+  const dir = mkdtempSync(join(tmpdir(), "covers-"));
+  try {
+    const jpg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(200, 7)]);
+    const local = fakeFetch([]);
+    assert.equal(await downloadCover("https://127.0.0.1/admin", 1, dir, { fetchImpl: local.impl }), null);
+    assert.equal(local.calls.length, 0, "ni siquiera hace el pedido");
+    const viaArchive = fakeFetch([{ status: 302, headers: { location: "https://ia600.us.archive.org/c.jpg" } }, { status: 200, bytes: jpg }]);
+    assert.match(await downloadCover("https://covers.openlibrary.org/b/id/1-L.jpg", 2, dir, { fetchImpl: viaArchive.impl }), /^2-/, "sigue la redirección de Open Library");
+    const sneaky = fakeFetch([{ status: 302, headers: { location: "http://192.168.0.1/router" } }, { status: 200, bytes: jpg }]);
+    assert.equal(await downloadCover("https://image.tmdb.org/t/p/w500/a.jpg", 3, dir, { fetchImpl: sneaky.impl }), null);
+    assert.equal(sneaky.calls.length, 1, "no sigue una redirección a la red local");
+    const huge = fakeFetch([{ status: 200, headers: { "content-length": String(50 * 1024 * 1024) }, bytes: jpg }]);
+    assert.equal(await downloadCover("https://image.tmdb.org/t/p/w500/a.jpg", 4, dir, { fetchImpl: huge.impl }), null, "muy pesada");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

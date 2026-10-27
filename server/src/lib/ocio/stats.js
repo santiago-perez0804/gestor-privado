@@ -24,6 +24,7 @@ export function finishedByMonth(finished, year) {
   for (const f of finished) {
     if (!f.date || Number(f.date.slice(0, 4)) !== year) continue;
     const m = months[Number(f.date.slice(5, 7)) - 1];
+    if (!m) continue; // fecha rota: no rompe el gráfico
     m.total += 1;
     if (f.type in m.byType) m.byType[f.type] += 1;
     m.items.push({ type: f.type, title: f.title, entryId: f.entryId });
