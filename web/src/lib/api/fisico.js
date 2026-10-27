@@ -12,27 +12,39 @@ export const fisicoApi = {
   setSetting: (key, value) => put(`/settings/${key}`, { value }),
   deleteSetting: (key) => del(`/settings/${key}`),
 
-  // plans
+  // plans (lista simple; la usa el widget de escritorio)
   getPlans: () => get("/plans"),
-  getPlan: (id) => get(`/plans/${id}`),
-  addPlan: (data) => post("/plans", data),
-  updatePlan: (id, data) => put(`/plans/${id}`, data),
-  deletePlan: (id) => del(`/plans/${id}`),
 
-  // routines
-  addRoutine: (planId, data) => post(`/plans/${planId}/routines`, data),
-  getRoutine: (id) => get(`/routines/${id}`),
-  updateRoutine: (id, data) => put(`/routines/${id}`, data),
-  deleteRoutine: (id) => del(`/routines/${id}`),
+  // ---------- Físico (rediseño): /api/fisico ----------
+  getFisicoSettings: () => get("/fisico/settings"),
+  saveFisicoSettings: (data) => put("/fisico/settings", data),
+  // biblioteca
+  getExercises: (params) => get(`/fisico/exercises?${toQuery(params)}`),
+  getExerciseAlternatives: (id) => get(`/fisico/exercises/${id}/alternatives`),
+  addExercise: (data) => post("/fisico/exercises", data),
+  updateExercise: (id, data) => put(`/fisico/exercises/${id}`, data),
+  deleteExercise: (id) => del(`/fisico/exercises/${id}`),
+  searchLegacyExercises: (params) => get(`/fisico/exercises/legacy?${toQuery(params)}`),
+  importLegacyExercise: (libraryId, data = {}) => post(`/fisico/exercises/legacy/${encodeURIComponent(libraryId)}/import`, data),
+  // planes y rutinas
+  getFisicoPlans: () => get("/fisico/plans"),
+  getActivePlan: () => get("/fisico/plans/active"),
+  getFisicoPlan: (id) => get(`/fisico/plans/${id}`),
+  addFisicoPlan: (data) => post("/fisico/plans", data),
+  updateFisicoPlan: (id, data) => put(`/fisico/plans/${id}`, data),
+  activatePlan: (id) => post(`/fisico/plans/${id}/activate`, {}),
+  duplicatePlan: (id, data) => post(`/fisico/plans/${id}/duplicate`, data),
+  deleteFisicoPlan: (id) => del(`/fisico/plans/${id}`),
+  setPlanSchedule: (id, days) => put(`/fisico/plans/${id}/schedule`, { days }),
+  addFisicoRoutine: (planId, data) => post(`/fisico/plans/${planId}/routines`, data),
+  getFisicoRoutine: (id) => get(`/fisico/routines/${id}`),
+  updateFisicoRoutine: (id, data) => put(`/fisico/routines/${id}`, data),
+  deleteFisicoRoutine: (id) => del(`/fisico/routines/${id}`),
+  addRoutineItem: (routineId, data) => post(`/fisico/routines/${routineId}/items`, data),
+  reorderRoutineItems: (routineId, ids) => put(`/fisico/routines/${routineId}/items/order`, { ids }),
+  updateRoutineItem: (id, data) => put(`/fisico/routine-items/${id}`, data),
+  deleteRoutineItem: (id) => del(`/fisico/routine-items/${id}`),
 
-  // routine exercises
-  addRoutineExercise: (routineId, data) => post(`/routines/${routineId}/exercises`, data),
-  updateRoutineExercise: (id, data) => put(`/routine-exercises/${id}`, data),
-  deleteRoutineExercise: (id) => del(`/routine-exercises/${id}`),
-
-  // exercise library
-  searchExerciseLibrary: (params) => get(`/exercise-library?${toQuery(params)}`),
-  getExercise: (id) => get(`/exercise-library/${id}`),
 
   // exercise logs
   getExerciseLogs: (params) => get(`/exercise-logs?${toQuery(params)}`),

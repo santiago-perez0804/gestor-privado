@@ -499,3 +499,36 @@ test("KOReader por Dropbox: conectar (OAuth), sincronizar solo lo nuevo, pendien
   const off = (await api("POST", "/api/dropbox/disconnect", {})).data;
   assert.equal(off.connected, false);
 });
+
+test("Físico: plan, rutina, ejercicios (biblioteca propia, grande e importada), orden, agenda y duplicar", async () => {
+  const exercises = (await api("GET", "/api/fisico/exercises?muscle=biceps")).data;
+  assert.ok(exercises.length >= 5 && exercises.every((e) => e.muscles.some((m) => m.muscle === "biceps")));
+  const curl = exercises.find((e) => e.name === "Curl con barra");
+  const legacy = (await api("GET", "/api/fisico/exercises/legacy?q=lateral%20raise")).data;
+  assert.ok(legacy.length > 0, "la biblioteca grande está cargada");
+  const imported = await api("POST", `/api/fisico/exercises/legacy/${encodeURIComponent(legacy[0].libraryId)}/import`, {});
+  assert.equal(imported.status, 201);
+  assert.ok(imported.data.muscles.length > 0);
+  assert.equal((await api("POST", "/api/fisico/exercises", { name: "X", muscles: [] })).status, 400);
+
+  const plan = await api("POST", "/api/fisico/plans", { name: "Plan de prueba", startDate: "2026-09-14", weeks: 13, deloadWeek: 7, priorityMuscles: ["biceps"] });
+  assert.equal(plan.status, 201);
+  const pid = plan.data.id;
+  const routine = (await api("POST", `/api/fisico/plans/${pid}/routines`, { name: "Pull A" })).data;
+  await api("POST", `/api/fisico/routines/${routine.id}/items`, { exerciseId: curl.id, sets: 3, repMin: 6, repMax: 8 });
+  const withTwo = (await api("POST", `/api/fisico/routines/${routine.id}/items`, { exerciseId: imported.data.id, sets: 3, repMin: 12, repMax: 15 })).data;
+  assert.deepEqual(withTwo.items.map((i) => i.exerciseId), [curl.id, imported.data.id]);
+  const reordered = (await api("PUT", `/api/fisico/routines/${routine.id}/items/order`, { ids: withTwo.items.map((i) => i.id).reverse() })).data;
+  assert.equal(reordered.items[0].exerciseId, imported.data.id);
+  assert.equal((await api("PUT", `/api/fisico/routine-items/${reordered.items[0].id}`, { repMin: 10, repMax: 8 })).status, 400);
+  const sched = (await api("PUT", `/api/fisico/plans/${pid}/schedule`, { days: [{ weekday: 2, routineId: routine.id, extras: ["calistenia"] }] })).data;
+  assert.equal(sched[1].routineId, routine.id);
+  const detail = (await api("GET", `/api/fisico/plans/${pid}`)).data;
+  assert.equal(detail.weeklyVolume.find((v) => v.muscle === "biceps").planned, 3);
+  assert.ok(detail.currentWeek >= 1);
+  const copy = await api("POST", `/api/fisico/plans/${pid}/duplicate`, { name: "Bloque 2" });
+  assert.equal(copy.status, 201);
+  assert.equal(copy.data.routines[0].items.length, 2);
+  assert.equal((await api("DELETE", `/api/fisico/plans/${copy.data.id}`)).status, 204);
+  assert.equal((await api("GET", "/api/plans")).status, 200, "la lista simple (widget) sigue andando");
+});

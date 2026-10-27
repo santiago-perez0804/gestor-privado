@@ -17,6 +17,8 @@ import {
   Landmark,
   LayoutDashboard,
   Lightbulb,
+  ListChecks,
+  Play,
   Palette,
   LineChart,
   PieChart,
@@ -41,16 +43,26 @@ export const MODULES = [
     icon: User,
     basePath: "/fisico",
     nav: [
+      { items: [{ to: "/fisico", label: "Inicio", icon: LayoutDashboard, end: true }] },
       {
+        label: "Entrenar",
         items: [
-          { to: "/fisico", label: "Inicio", icon: LayoutDashboard, end: true },
-          { to: "/fisico/progreso", label: "Progreso", icon: LineChart },
+          // badge "plan": el nombre corto del plan activo (p. ej. PPL).
+          { to: "/fisico/plan", label: "Plan y rutinas", icon: ListChecks, badge: "plan" },
           { to: "/fisico/records", label: "Récords", icon: Trophy },
+        ],
+      },
+      {
+        label: "Cuerpo",
+        items: [
+          { to: "/fisico/progreso", label: "Peso", icon: LineChart },
           { to: "/fisico/medidas", label: "Medidas", icon: Ruler },
           { to: "/fisico/fotos", label: "Fotos", icon: Camera },
         ],
       },
     ],
+    // Acción principal del módulo, debajo de las secciones.
+    cta: { to: "/fisico/entreno", label: "Empezar entreno", icon: Play },
   },
   {
     // El id y la ruta siguen siendo "gastos" (links del widget, datos guardados); el nombre visible es Finanzas.

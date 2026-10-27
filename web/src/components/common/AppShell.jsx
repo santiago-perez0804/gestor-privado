@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from "react";
-import { NavLink, useLocation } from "react-router-dom";
+import { Link, NavLink, useLocation } from "react-router-dom";
 import { AnimatePresence, MotionConfig, motion } from "framer-motion";
 import { Moon, Settings, Sun } from "lucide-react";
 import { ExportButton } from "./ExportButton.jsx";
@@ -83,7 +83,7 @@ function SidebarNav({ module, badges }) {
                       <>
                         <item.icon size={16} style={{ color: item.color ?? (isActive ? "var(--accent)" : undefined) }} className="shrink-0" />
                         <span className="flex-1 truncate">{item.label}</span>
-                        {item.badge && badges[item.badge] > 0 && (
+                        {item.badge && (typeof badges[item.badge] === "string" ? !!badges[item.badge] : badges[item.badge] > 0) && (
                           <span className="text-[10px] font-mono font-semibold rounded-md px-1.5 py-0.5" style={{ background: "var(--surface-alt)", color: "var(--text-muted)" }}>
                             {badges[item.badge]}
                           </span>
@@ -95,6 +95,12 @@ function SidebarNav({ module, badges }) {
               </div>
             </div>
           ))}
+          {module.cta && (
+            <Link to={module.cta.to} className="flex items-center justify-center gap-2 h-10 rounded-xl text-sm font-semibold" style={{ background: "var(--accent)", color: "var(--on-accent)" }}>
+              <module.cta.icon size={15} />
+              {module.cta.label}
+            </Link>
+          )}
         </motion.div>
       </AnimatePresence>
     </nav>

@@ -1,12 +1,12 @@
 import { Link } from "react-router-dom";
-import { LineChart, Trophy, Ruler, Camera } from "lucide-react";
+import { LineChart, Trophy, Ruler, Camera, ListChecks } from "lucide-react";
 import { PageTransition } from "../../components/common/PageTransition.jsx";
 import { WeightCurrentCard } from "../../components/training/WeightCurrentCard.jsx";
-import { PlansList } from "../../components/training/PlansList.jsx";
 import { useApi } from "../../hooks/useApi.js";
 import { api } from "../../lib/api.js";
 
 const PILLS = [
+  { to: "/fisico/plan", label: "Plan y rutinas", icon: ListChecks },
   { to: "/fisico/progreso", label: "Progreso", icon: LineChart },
   { to: "/fisico/records", label: "Récords", icon: Trophy },
   { to: "/fisico/medidas", label: "Medidas", icon: Ruler },
@@ -16,19 +16,13 @@ const PILLS = [
 export function FisicoHome() {
   const weightsApi = useApi(api.getWeights, []);
   const settingsApi = useApi(api.getSettings, []);
-  const plansApi = useApi(api.getPlans, []);
 
   async function handleAddWeight(data) {
     const created = await api.addWeight(data);
     weightsApi.setData((prev) => [created, ...(prev || [])]);
   }
 
-  async function handleAddPlan(data) {
-    const created = await api.addPlan(data);
-    plansApi.setData((prev) => [{ ...created, routineCount: 0 }, ...(prev || [])]);
-  }
-
-  if (!weightsApi.data || !plansApi.data || !settingsApi.data) return null;
+  if (!weightsApi.data || !settingsApi.data) return null;
 
   return (
     <PageTransition>
@@ -51,7 +45,10 @@ export function FisicoHome() {
       </div>
       <div className="flex flex-col gap-4">
         <WeightCurrentCard weights={weightsApi.data} goal={settingsApi.data.weight_goal_kg} onAdd={handleAddWeight} />
-        <PlansList plans={plansApi.data} onAdd={handleAddPlan} />
+        <Link to="/fisico/plan" className="card-hover flex items-center gap-3 rounded-2xl p-4" style={{ border: "1px solid var(--border)", background: "var(--surface)" }}>
+          <ListChecks size={18} style={{ color: "var(--accent)" }} />
+          <span className="text-sm font-semibold">Plan y rutinas</span>
+        </Link>
       </div>
     </PageTransition>
   );

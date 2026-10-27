@@ -24,7 +24,7 @@ export default function App() {
   // En pantalla grande la barra lateral (AppShell) reemplaza la barra de arriba y la de abajo.
   // Finanzas y Ocio usan todo el ancho (el Resumen de Finanzas, todo el alto); los demás módulos
   // mantienen su columna angosta.
-  const wide = pathname.startsWith("/gastos") || pathname.startsWith("/ocio");
+  const wide = pathname.startsWith("/gastos") || pathname.startsWith("/ocio") || pathname.startsWith("/fisico");
   const finanzasHome = pathname === "/gastos" || pathname === "/gastos/";
   const desktop = wide ? `lg:max-w-none lg:p-0 ${finanzasHome ? "lg:h-full" : ""}` : "lg:py-8";
   return (
