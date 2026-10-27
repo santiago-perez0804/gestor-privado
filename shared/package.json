@@ -1,0 +1,6 @@
+{
+  "name": "gestor-shared",
+  "private": true,
+  "type": "module",
+  "description": "Lógica pura compartida entre el server, la web y el futuro backend en la nube (sin dependencias)."
+}

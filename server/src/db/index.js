@@ -9,6 +9,7 @@ import { ocioSchema } from "./schema/ocio.js";
 import { proyectosSchema } from "./schema/proyectos.js";
 import { runMigrations } from "./migrate.js";
 import { migrateOcioV2, describeMigration } from "./migrations/ocioV2.js";
+import { migrateFisicoV2, describeFisicoMigration } from "./migrations/fisicoV2.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const dataDir = process.env.DATA_DIR || join(__dirname, "..", "..", "data");
@@ -18,10 +19,12 @@ export const certificatesDir = join(dataDir, "certificates");
 export const coversDir = join(dataDir, "covers");
 export const artworksDir = join(dataDir, "artworks");
 export const importsDir = join(dataDir, "imports");
+// Físico: fotos de progreso privadas (nunca servidas como estáticos; solo por la API).
+export const privatePhotosDir = join(dataDir, "private", "photos");
 mkdirSync(dataDir, { recursive: true });
 mkdirSync(photosDir, { recursive: true });
 mkdirSync(certificatesDir, { recursive: true });
-for (const dir of [coversDir, artworksDir, importsDir]) mkdirSync(dir, { recursive: true });
+for (const dir of [coversDir, artworksDir, importsDir, privatePhotosDir]) mkdirSync(dir, { recursive: true });
 
 export const db = new DatabaseSync(join(dataDir, "fisico.db"));
 db.exec("PRAGMA foreign_keys = ON");
@@ -35,6 +38,9 @@ runMigrations(db);
 // Ocio al modelo nuevo (idempotente; hace backup antes si hay algo para migrar).
 export const ocioMigration = migrateOcioV2(db, { backupsDir: join(dataDir, "backups") });
 if (ocioMigration.ran) console.log(`[db] ${describeMigration(ocioMigration)}`);
+// Físico al modelo del rediseño (idempotente; backup antes si hay algo para migrar).
+export const fisicoMigration = migrateFisicoV2(db, { backupsDir: join(dataDir, "backups"), publicPhotosDir: photosDir, privatePhotosDir });
+if (fisicoMigration.ran) console.log(`[db] ${describeFisicoMigration(fisicoMigration)}`);
 
 export function nowIso() {
   return new Date().toISOString();

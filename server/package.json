@@ -5,9 +5,10 @@
   "scripts": {
     "dev": "node --watch src/index.js",
     "start": "node src/index.js",
-    "test": "node --test \"test/*.test.js\"",
+    "test": "node --test \"test/*.test.js\" \"../shared/test/*.test.js\"",
     "migrate:ocio": "node src/db/migrations/runOcioV2.js",
-    "test:integration": "node --test --test-concurrency=1 \"test/integration/*.test.js\""
+    "test:integration": "node --test --test-concurrency=1 \"test/integration/*.test.js\"",
+    "migrate:fisico": "node src/db/migrations/runFisicoV2.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
