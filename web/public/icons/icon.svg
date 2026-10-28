@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1f8a74"/>
+      <stop offset="1" stop-color="#0a3b33"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.32" r="0.6">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.10"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="skin" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#a8ecbf"/>
+      <stop offset="1" stop-color="#4fb57c"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <rect width="1024" height="1024" fill="url(#glow)"/>
+  <ellipse cx="512" cy="872" rx="290" ry="34" fill="#000" opacity="0.18"/>
+  <g fill="url(#skin)">
+    <circle cx="340" cy="398" r="138"/>
+    <circle cx="684" cy="398" r="138"/>
+    <ellipse cx="512" cy="608" rx="338" ry="252"/>
+  </g>
+  <circle cx="340" cy="398" r="98" fill="#fff"/>
+  <circle cx="684" cy="398" r="98" fill="#fff"/>
+  <circle cx="354" cy="414" r="54" fill="#0f2e28"/>
+  <circle cx="670" cy="414" r="54" fill="#0f2e28"/>
+  <circle cx="334" cy="390" r="19" fill="#fff"/>
+  <circle cx="650" cy="390" r="19" fill="#fff"/>
+  <circle cx="482" cy="580" r="10" fill="#2a7a52"/>
+  <circle cx="542" cy="580" r="10" fill="#2a7a52"/>
+  <ellipse cx="318" cy="652" rx="48" ry="28" fill="#ff7d93" opacity="0.6"/>
+  <ellipse cx="706" cy="652" rx="48" ry="28" fill="#ff7d93" opacity="0.6"/>
+  <path d="M372 648 Q512 748 652 648" fill="none" stroke="#0d4a40" stroke-width="24" stroke-linecap="round"/>
+</svg>

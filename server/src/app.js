@@ -12,6 +12,8 @@ import { basicAuth } from "./middleware/basicAuth.js";
 import { requireSession } from "./middleware/session.js";
 import { authEnabled } from "./services/auth.js";
 import registerAuthRoutes from "./routes/auth.js";
+import registerCronRoutes from "./routes/cron.js";
+import { catchUpToday } from "./services/cron.js";
 import { storage, SAFE_KEY } from "./services/storage/index.js";
 
 import registerWeightsRoutes from "./routes/weights.js";
@@ -67,10 +69,12 @@ export function createApp({ serveWeb = true } = {}) {
   app.use(basicAuth);
   registerAuthRoutes(app);
   app.use(requireSession());
-  // La base se abre una sola vez (en Vercel, en el primer pedido de cada instancia).
+  // La base se abre una sola vez (en Vercel, en el primer pedido de cada instancia). El primer
+  // pedido del día además genera los gastos e ingresos fijos que vencieron.
   app.use(async (req, res, next) => {
     try {
       await openDb();
+      if (req.path.startsWith("/api/") && !req.path.startsWith("/api/cron/")) await catchUpToday();
       next();
     } catch (err) {
       next(err);
@@ -79,6 +83,7 @@ export function createApp({ serveWeb = true } = {}) {
 
   // Archivos: los nombres incluyen un id aleatorio, así que se pueden cachear (en la nube, la
   // redirección a la URL firmada se cachea menos que lo que dura la firma).
+  registerCronRoutes(app);
   app.get("/covers/:key", serveBucket("covers", "private, max-age=3000"));
   app.get("/artworks/:key", serveBucket("artworks", "private, max-age=3000"));
   app.get("/certificates/:key", serveBucket("certificates", "private, max-age=600"));

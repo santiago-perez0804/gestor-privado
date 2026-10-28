@@ -94,19 +94,18 @@ function makePng(w, h, color = () => [80, 170, 90, 255]) {
 before(async () => {
   dataDir = mkdtempSync(join(tmpdir(), "gestor-it-"));
   if (process.env.IT_DB) {
-    const src = new DatabaseSync(resolve(SERVER_DIR, process.env.IT_DB), { readOnly: true });
-    src.exec(`VACUUM INTO '${join(dataDir, "fisico.db").replaceAll("\\", "/").replaceAll("'", "''")}'`);
-    src.close();
-    // Que la copia no pueda hablar con cuentas reales (Instagram, Google).
-    const copy = new DatabaseSync(join(dataDir, "fisico.db"));
-    try {
-      copy.exec("UPDATE projects SET accessToken = 'it-disabled' WHERE accessToken IS NOT NULL");
-      copy.exec("DELETE FROM google_account");
-      copy.exec("DELETE FROM dropbox_account");
-    } catch {
-      // tablas que todavía no existen en esa base
-    }
-    copy.close();
+    // La base de la PC mudada a la Postgres local del server de prueba (igual que la mudanza a Supabase).
+    const { createDb } = await import("../../src/db/pg.js");
+    const { migrate } = await import("../../src/db/pg/migrations.js");
+    const { transferSqliteToPg } = await import("../../src/db/transfer.js");
+    const pg = createDb();
+    await pg.open({ dataDir: join(dataDir, "pg") });
+    await migrate(pg);
+    const report = await transferSqliteToPg({ sqlitePath: resolve(SERVER_DIR, process.env.IT_DB), db: pg });
+    if (report.problems.length) throw new Error(`La mudanza de prueba no coincide:\n${report.problems.join("\n")}`);
+    // Que la copia no pueda hablar con cuentas reales (Instagram, Google, Dropbox).
+    await pg.exec("UPDATE projects SET accessToken = 'it-disabled' WHERE accessToken IS NOT NULL; DELETE FROM google_account; DELETE FROM dropbox_account;");
+    await pg.close();
   }
   await startDropboxFake();
   server = spawn(process.execPath, ["src/index.js"], {
@@ -118,7 +117,7 @@ before(async () => {
   });
   server.stdout.on("data", (d) => (log += d));
   server.stderr.on("data", (d) => (log += d));
-  for (let i = 0; i < 100; i++) {
+  for (let i = 0; i < 300; i++) {
     if (log.includes("escuchando")) return;
     if (server.exitCode != null) break;
     await new Promise((r) => setTimeout(r, 100));
@@ -542,24 +541,26 @@ test("Físico: entreno en vivo por HTTP (empezar, guardar idempotente, versión 
   await api("POST", `/api/fisico/routines/${routine.id}/items`, { exerciseId: curl.id, sets: 3, repMin: 6, repMax: 8 });
   const start = await api("GET", `/api/fisico/workout/start?routineId=${routine.id}`);
   assert.equal(start.status, 200);
+  // Fechas relativas a ahora: sobre una copia de la base real puede haber otro entreno en curso más viejo.
+  const T0 = Date.now() - 2 * 3600_000;
   let k = 0;
   const newId = () => `it-session-${String(++k).padStart(4, "0")}`;
-  let s = initWorkout(start.data, { now: Date.parse("2026-10-27T21:00:00Z"), newId });
+  let s = initWorkout(start.data, { now: T0, newId });
   for (const set of s.sets) {
-    s = workoutReducer(s, { type: "edit", setId: set.id, field: "weightKg", value: 30, now: Date.parse("2026-10-27T21:01:00Z") });
-    s = workoutReducer(s, { type: "toggleDone", setId: set.id, now: Date.parse("2026-10-27T21:02:00Z") });
+    s = workoutReducer(s, { type: "edit", setId: set.id, field: "weightKg", value: 30, now: T0 + 60_000 });
+    s = workoutReducer(s, { type: "toggleDone", setId: set.id, now: T0 + 120_000 });
   }
   const first = await api("PUT", `/api/fisico/sessions/${s.session.id}`, toSnapshot(s));
   assert.equal(first.status, 200);
   assert.equal((await api("PUT", `/api/fisico/sessions/${s.session.id}`, toSnapshot(s))).data.session.sets.length, 3, "idempotente");
   assert.equal((await api("GET", "/api/fisico/sessions/in-progress")).data.id, s.session.id, "se puede retomar desde otro dispositivo");
   const old = toSnapshot(s);
-  s = workoutReducer(s, { type: "finish", now: Date.parse("2026-10-27T22:00:00Z") });
+  s = workoutReducer(s, { type: "finish", now: T0 + 3_600_000 });
   await api("PUT", `/api/fisico/sessions/${s.session.id}`, toSnapshot(s));
   assert.equal((await api("PUT", `/api/fisico/sessions/${s.session.id}`, old)).data.stale, true, "reintento atrasado: no pisa el terminado");
   const summary = (await api("GET", `/api/fisico/sessions/${s.session.id}/summary`)).data;
   assert.deepEqual([summary.status, summary.durationMin, summary.workingSets, summary.volumeKg], ["done", 60, 3, 30 * 6 * 3], "primera vez: arranca en el mínimo del rango");
-  assert.equal((await api("GET", "/api/fisico/sessions/in-progress")).data, null);
+  assert.notEqual((await api("GET", "/api/fisico/sessions/in-progress")).data?.id, s.session.id, "terminado: ya no está en curso");
   const next = (await api("GET", `/api/fisico/workout/start?routineId=${routine.id}`)).data.exercises[0];
   assert.equal(next.previous.sets.length, 3, "la próxima vez muestra lo de hoy como anterior");
   assert.equal((await api("PUT", "/api/fisico/sessions/corto", toSnapshot(s))).status, 400);

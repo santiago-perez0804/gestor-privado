@@ -3,6 +3,7 @@
 import { db } from "../../db/index.js";
 import { createGoogleAuth, createCalendarClient, googleConfigured, googleConfig } from "./calendarClient.js";
 import { createCalendarSync, getAccount, saveAccount } from "./sync.js";
+import { background } from "../../lib/background.js";
 
 const SYNC_EVERY_MS = 10 * 60_000;
 
@@ -40,9 +41,13 @@ function createGoogleService() {
     return running;
   }
 
-  /** Después de un cambio local: espera un poco (por si vienen más) y sube. */
+  /**
+   * Después de un cambio local: espera un poco (por si vienen más) y sube. En la nube se sube ya,
+   * en segundo plano (la función no queda viva para un temporizador).
+   */
   async function scheduleSoon(ms = 3000) {
     if (!await connected()) return;
+    if (process.env.VERCEL) return void background(sync());
     clearTimeout(soonTimer);
     soonTimer = setTimeout(() => sync().catch(() => {}), ms);
   }

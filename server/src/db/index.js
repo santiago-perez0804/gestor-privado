@@ -10,7 +10,7 @@ import { dirname, join } from "node:path";
 import { mkdirSync } from "node:fs";
 import { createDb } from "./pg.js";
 import { migrate } from "./pg/migrations.js";
-import { seedIfEmpty } from "./pg/seed.js";
+import { seedIfEmpty, ensureCardio } from "./pg/seed.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const dataDir = process.env.DATA_DIR || join(__dirname, "..", "..", "data");
@@ -40,6 +40,7 @@ export function openDb({ url = process.env.DATABASE_URL, pgDir = process.env.PG_
     if (applied.length) console.log(`[db] migraciones aplicadas: ${applied.join(", ")}`);
     const { seeded } = await seedIfEmpty(db);
     if (seeded) console.log("[db] base nueva: biblioteca de ejercicios y hábitos de ejemplo cargados");
+    if (await ensureCardio(db)) console.log("[db] ejercicios de cardio agregados a la biblioteca");
     return db;
   })().catch((err) => {
     opening = null;
