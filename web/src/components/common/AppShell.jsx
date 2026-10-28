@@ -3,6 +3,7 @@ import { Link, NavLink, useLocation } from "react-router-dom";
 import { AnimatePresence, MotionConfig, motion } from "framer-motion";
 import { Moon, Settings, Sun } from "lucide-react";
 import { ExportButton } from "./ExportButton.jsx";
+import { LogoutButton } from "./LogoutButton.jsx";
 import { ModuleSwitcher } from "./ModuleSwitcher.jsx";
 import { useTheme } from "../../hooks/useTheme.js";
 import { moduleForPath } from "../../modules.js";
@@ -37,6 +38,7 @@ function SidebarFooter() {
         {dark ? <Sun size={15} /> : <Moon size={15} />}
       </button>
       <ExportButton />
+      <LogoutButton />
       {openSettings && (
         <button onClick={() => openSettings()} className={`hover-surface ${footerButton}`} style={footerButtonStyle} aria-label="Configuración" title="Configuración">
           <Settings size={15} />

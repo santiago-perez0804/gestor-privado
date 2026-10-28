@@ -1,9 +1,13 @@
+import { notifyUnauthenticated } from "../auth.js";
+
 export async function request(path, options = {}) {
   const res = await fetch(`/api${path}`, {
     headers: options.body ? { "Content-Type": "application/json" } : undefined,
+    credentials: "same-origin",
     ...options,
   });
   if (res.status === 204) return null;
+  if (res.status === 401) notifyUnauthenticated();
   const data = await res.json().catch(() => null);
   if (!res.ok) throw new Error(data?.error || `request_failed_${res.status}`);
   return data;

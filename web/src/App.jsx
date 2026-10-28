@@ -3,6 +3,7 @@ import { AppShell } from "./components/common/AppShell.jsx";
 import { BottomNav } from "./components/common/BottomNav.jsx";
 import { ThemeToggle } from "./components/common/ThemeToggle.jsx";
 import { ExportButton } from "./components/common/ExportButton.jsx";
+import { LogoutButton } from "./components/common/LogoutButton.jsx";
 import { ErrorBoundary } from "./components/common/ErrorBoundary.jsx";
 import { fisicoRoutes } from "./pages/fisico/routes.jsx";
 import { gastosRoutes } from "./pages/gastos/routes.jsx";
@@ -40,6 +41,7 @@ export default function App() {
           <div className="flex items-center justify-end gap-2 mb-2 print:hidden lg:hidden">
             <ExportButton />
             <ThemeToggle />
+            <LogoutButton />
           </div>
           <ErrorBoundary resetKey={pathname}>
             <Routes>

@@ -9,6 +9,9 @@ import { openDb } from "./db/index.js";
 import { asyncRoutes } from "./lib/asyncRoutes.js";
 import { requestGuard, securityHeaders, DEV_ORIGINS } from "./middleware/requestGuard.js";
 import { basicAuth } from "./middleware/basicAuth.js";
+import { requireSession } from "./middleware/session.js";
+import { authEnabled } from "./services/auth.js";
+import registerAuthRoutes from "./routes/auth.js";
 import { storage, SAFE_KEY } from "./services/storage/index.js";
 
 import registerWeightsRoutes from "./routes/weights.js";
@@ -56,11 +59,14 @@ export function createApp({ serveWeb = true } = {}) {
   app.disable("x-powered-by");
   app.set("trust proxy", process.env.VERCEL ? 1 : false);
   app.use(securityHeaders);
-  app.use(requestGuard());
+  // Con login (nube) se acepta cualquier dominio: lo que protege es la sesión. Sin login, solo este equipo.
+  app.use(requestGuard({ authConfigured: () => authEnabled() || !!(process.env.AUTH_USER && process.env.AUTH_PASS) }));
   // CORS solo para el front de desarrollo (Vite); la app y el widget se sirven desde el mismo origen.
   app.use(cors({ origin: DEV_ORIGINS }));
   app.use(express.json({ limit: "1mb" }));
   app.use(basicAuth);
+  registerAuthRoutes(app);
+  app.use(requireSession());
   // La base se abre una sola vez (en Vercel, en el primer pedido de cada instancia).
   app.use(async (req, res, next) => {
     try {
