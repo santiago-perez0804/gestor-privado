@@ -30,6 +30,13 @@ export const EQUIPMENT = {
 };
 export const EQUIPMENT_IDS = Object.keys(EQUIPMENT);
 
+/** Tipo de ejercicio: fuerza (kg × reps) o cardio (tiempo + opcionales). */
+export const EXERCISE_KINDS = { strength: "Fuerza", cardio: "Cardio" };
+
+/** Datos opcionales de una serie de cardio (además del tiempo, que va siempre). */
+export const CARDIO_FIELDS = { distance: "Distancia", level: "Nivel / velocidad / inclinación", count: "Conteo (saltos, pisos…)" };
+export const CARDIO_FIELD_IDS = Object.keys(CARDIO_FIELDS);
+
 /** Tipos de serie. Solo las "working" completadas cuentan para volumen, récords y progresión. */
 export const SET_TYPES = ["warmup", "working", "drop", "failure"];
 export const SESSION_STATUSES = ["in_progress", "done", "discarded"];
@@ -72,6 +79,8 @@ export const DEFAULT_SETTINGS = {
   plates: { 25: 2, 20: 2, 15: 1, 10: 2, 5: 2, 2.5: 2, 1.25: 2 },
   // Calentamiento: descanso fijo.
   warmupRestSeconds: 60,
+  // Objetivo semanal de cardio (minutos; la OMS recomienda 150–300 de intensidad moderada).
+  cardioWeeklyMinutes: 150,
   // Medidas y fotos: cada cuántos días.
   measureEveryDays: 14,
   photoEveryDays: 14,

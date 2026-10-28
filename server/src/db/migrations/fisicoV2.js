@@ -7,9 +7,10 @@
 import { join } from "node:path";
 import { existsSync, mkdirSync, renameSync, copyFileSync, unlinkSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { FISICO_EXERCISES } from "../seeds/fisicoExercises.js";
+import { FISICO_EXERCISES, FISICO_CARDIO } from "../seeds/fisicoExercises.js";
 
-export const FISICO_SCHEMA_VERSION = 2;
+// 2: rediseño. 3: cardio (ejercicios de cardio y sus datos en las series).
+export const FISICO_SCHEMA_VERSION = 3;
 
 const columns = (db, table) => db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
 const tableExists = (db, name) => !!db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(name);
@@ -40,6 +41,18 @@ function ensureColumns(db) {
   ensureColumn(db, "plans", "dailyExtras", "TEXT NOT NULL DEFAULT '[]'");
   ensureColumn(db, "plans", "isActive", "INTEGER NOT NULL DEFAULT 0");
   ensureColumn(db, "routines", "color", "TEXT");
+  // Cardio (v3).
+  ensureColumn(db, "exercises", "kind", "TEXT NOT NULL DEFAULT 'strength' CHECK(kind IN ('strength','cardio'))");
+  ensureColumn(db, "exercises", "cardioFields", "TEXT NOT NULL DEFAULT '[]'");
+  ensureColumn(db, "exercises", "levelLabel", "TEXT");
+  ensureColumn(db, "exercises", "countLabel", "TEXT");
+  ensureColumn(db, "set_logs", "durationSeconds", "INTEGER CHECK(durationSeconds IS NULL OR durationSeconds BETWEEN 0 AND 86400)");
+  ensureColumn(db, "set_logs", "distanceKm", "REAL CHECK(distanceKm IS NULL OR distanceKm BETWEEN 0 AND 1000)");
+  ensureColumn(db, "set_logs", "level", "REAL");
+  ensureColumn(db, "set_logs", "count", "INTEGER CHECK(count IS NULL OR count BETWEEN 0 AND 1000000)");
+  ensureColumn(db, "routine_exercises", "targetMinutes", "INTEGER CHECK(targetMinutes IS NULL OR targetMinutes BETWEEN 1 AND 600)");
+  // 'cardio' = registro rápido (o entreno libre solo de cardio): no cumple días de rutina de la agenda.
+  ensureColumn(db, "workout_sessions", "kind", "TEXT NOT NULL DEFAULT 'strength' CHECK(kind IN ('strength','cardio'))");
   db.exec("CREATE INDEX IF NOT EXISTS idx_routine_exercises_exercise ON routine_exercises(exerciseId)");
 }
 
@@ -62,15 +75,16 @@ function pendingWork(db) {
   const photos = tableExists(db, "progress_photos")
     ? db.prepare("SELECT id FROM progress_photos WHERE id NOT IN (SELECT legacyId FROM photos WHERE legacyId IS NOT NULL)").all().filter((r) => !skipped.has(r.id)).length
     : 0;
-  const oneTime = Number(setting(db, "fisico.schemaVersion") || 0) < FISICO_SCHEMA_VERSION;
-  return { oldRoutineExercises, measurements, photos, oneTime, any: oldRoutineExercises || measurements > 0 || photos > 0 || oneTime };
+  const version = Number(setting(db, "fisico.schemaVersion") || 0);
+  const oneTime = version < FISICO_SCHEMA_VERSION;
+  return { oldRoutineExercises, measurements, photos, oneTime, version, any: oldRoutineExercises || measurements > 0 || photos > 0 || oneTime };
 }
 
 function backup(db, backupsDir, now) {
   if (!backupsDir) return null;
   mkdirSync(backupsDir, { recursive: true });
   const stamp = now.toISOString().slice(0, 19).replace(/[:T]/g, "-");
-  const path = join(backupsDir, `fisico-${stamp}-antes-fisico-v2.db`);
+  const path = join(backupsDir, `fisico-${stamp}-antes-fisico-v${FISICO_SCHEMA_VERSION}.db`);
   if (!existsSync(path)) db.exec(`VACUUM INTO '${path.replace(/'/g, "''")}'`);
   return path;
 }
@@ -161,8 +175,23 @@ function migratePhotos(db, ts, summary, { publicPhotosDir, privatePhotosDir }) {
   }
 }
 
-/** Lo que se hace una sola vez: biblioteca, hábitos, meta de peso y valores del plan activo. */
-function oneTimeSetup(db, ts, summary) {
+/** Lo que se hace una sola vez, por versión: v2 (biblioteca, hábitos, meta, plan activo) y v3 (cardio). */
+function oneTimeSetup(db, ts, summary, fromVersion) {
+  if (fromVersion < 2) setupV2(db, ts, summary);
+  if (fromVersion < 3) setupV3(db, ts, summary);
+  putSetting(db, "fisico.schemaVersion", FISICO_SCHEMA_VERSION);
+}
+
+/** v3: ejercicios de cardio (si ya tenías uno con el mismo nombre, se respeta el tuyo). */
+function setupV3(db, ts, summary) {
+  const insert = db.prepare(
+    `INSERT OR IGNORE INTO exercises (name, equipment, bar, isBodyweight, muscles, notes, isCustom, kind, cardioFields, levelLabel, countLabel, createdAt, updatedAt)
+     VALUES (?, ?, NULL, 0, '[]', ?, 0, 'cardio', ?, ?, ?, ?, ?)`
+  );
+  for (const c of FISICO_CARDIO) summary.cardioSeeded += insert.run(c.name, c.equipment, c.notes, JSON.stringify(c.fields), c.levelLabel, c.countLabel, ts, ts).changes;
+}
+
+function setupV2(db, ts, summary) {
   const insertExercise = db.prepare(
     `INSERT OR IGNORE INTO exercises (name, equipment, bar, isBodyweight, muscles, notes, isCustom, createdAt, updatedAt)
      VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)`
@@ -198,7 +227,6 @@ function oneTimeSetup(db, ts, summary) {
       summary.activePlan = plan.name;
     }
   }
-  putSetting(db, "fisico.schemaVersion", FISICO_SCHEMA_VERSION);
 }
 
 /**
@@ -210,6 +238,7 @@ export function migrateFisicoV2(db, { backupsDir, publicPhotosDir, privatePhotos
     ran: false,
     backupPath: null,
     exercisesSeeded: 0,
+    cardioSeeded: 0,
     habitsSeeded: 0,
     weightGoal: null,
     activePlan: null,
@@ -263,6 +292,7 @@ export function describeFisicoMigration(s) {
   const parts = [
     `${s.totals.weighIns} pesadas intactas`,
     s.exercisesSeeded && `${s.exercisesSeeded} ejercicios en la biblioteca`,
+    s.cardioSeeded && `${s.cardioSeeded} ejercicios de cardio`,
     s.habitsSeeded && `${s.habitsSeeded} hábitos`,
     s.weightGoal && `meta de peso ${s.weightGoal} kg`,
     s.activePlan && `plan activo "${s.activePlan}"`,

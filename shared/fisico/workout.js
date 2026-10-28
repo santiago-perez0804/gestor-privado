@@ -3,13 +3,41 @@
 // El estado entero se guarda en el celular después de cada cambio y se sube como snapshot.
 import { detectRecord, exerciseRecords } from "./strength.js";
 import { platesPerSide } from "./plates.js";
+import { isCardio, cardioTotals, cardioRecordHits } from "./cardio.js";
 
-/** @typedef {{ id: string, exerciseKey: string, exerciseId: number, type: 'warmup'|'working'|'drop'|'failure', weightKg: number|null, reps: number|null, rir: number|null, completedAt: string|null }} LiveSet */
+/** @typedef {{ id: string, exerciseKey: string, exerciseId: number, type: 'warmup'|'working'|'drop'|'failure', weightKg: number|null, reps: number|null, rir: number|null, completedAt: string|null,
+ *   durationSeconds?: number|null, distanceKm?: number|null, level?: number|null, count?: number|null, timerStartedAt?: number|null, timed?: boolean }} LiveSet
+ * Las series de cardio usan durationSeconds (siempre) y distancia/nivel/conteo (opcionales); el
+ * cronómetro guarda cuándo arrancó (timerStartedAt) y suma al pausar, así sobrevive a la pantalla bloqueada. */
 
 const iso = (now) => new Date(now).toISOString();
 
+const CARDIO_EMPTY = { durationSeconds: null, distanceKm: null, level: null, count: null, timerStartedAt: null, timed: false };
+
+/** Bloques de cardio planificados: el tiempo objetivo (o el de la última vez) repartido, y el nivel sugerido. */
+function plannedCardio(ex, newId) {
+  const p = ex.prescription || {};
+  const blocks = Math.max(1, p.sets || 1);
+  const target = ex.suggestion?.durationSeconds ?? (p.targetMinutes ? p.targetMinutes * 60 : null) ?? ex.previous?.totals?.durationSeconds ?? null;
+  const level = ex.suggestion?.level ?? ex.previous?.totals?.level ?? null;
+  return Array.from({ length: blocks }, () => ({
+    id: newId(),
+    exerciseKey: ex.key,
+    exerciseId: ex.exerciseId,
+    type: "working",
+    weightKg: null,
+    reps: null,
+    rir: null,
+    completedAt: null,
+    ...CARDIO_EMPTY,
+    durationSeconds: target ? Math.round(target / blocks) : null,
+    level,
+  }));
+}
+
 /** Series planificadas de un ejercicio a partir de la sugerencia (peso y reps objetivo). */
 function plannedSets(ex, newId) {
+  if (isCardio(ex.exercise)) return plannedCardio(ex, newId);
   const p = ex.prescription || { sets: 3, repMin: 8, repMax: 12 };
   const prevWorking = (ex.previous?.sets || []).filter((s) => s.type === "working");
   const weight = ex.suggestion?.weightKg ?? prevWorking[0]?.weightKg ?? (ex.exercise?.isBodyweight ? 0 : null);
@@ -65,10 +93,30 @@ function recordsBefore(state, set) {
   return { bestE1rm, byReps };
 }
 
-/** Descanso que corresponde después de una serie (calentamiento: fijo). */
+/** Descanso que corresponde después de una serie (calentamiento: fijo; cardio: el de la prescripción, por defecto ninguno). */
 export function restFor(state, set) {
   if (set.type === "warmup") return state.settings.warmupRestSeconds ?? 60;
-  return exerciseOf(state, set.exerciseKey)?.prescription?.restSeconds ?? 90;
+  const ex = exerciseOf(state, set.exerciseKey);
+  if (isCardio(ex?.exercise)) return ex?.prescription?.restSeconds ?? 0;
+  return ex?.prescription?.restSeconds ?? 90;
+}
+
+/** Segundos del cronómetro de una serie de cardio (lo acumulado más lo que corre ahora). */
+export const elapsedSeconds = (set, now) => (set?.durationSeconds || 0) + (set?.timerStartedAt ? Math.max(0, Math.round((now - set.timerStartedAt) / 1000)) : 0);
+
+/** Frena el cronómetro de una serie (suma lo corrido). */
+const stopTimer = (s, now) => (s.timerStartedAt ? { ...s, durationSeconds: elapsedSeconds(s, now), timerStartedAt: null } : s);
+
+/** Récords de cardio en vivo: los totales del ejercicio hoy contra los históricos (un aviso por ejercicio). */
+function withCardioPrs(state, exerciseKey) {
+  const ex = exerciseOf(state, exerciseKey);
+  if (!isCardio(ex?.exercise)) return state;
+  const prs = state.prs.filter((p) => !(p.cardio && p.exerciseKey === exerciseKey));
+  const own = setsOf(state, exerciseKey);
+  const hits = cardioRecordHits(cardioTotals(own), ex.cardioRecords);
+  const last = [...own].reverse().find((s) => s.completedAt);
+  if (hits.length && last) prs.push({ setId: last.id, exerciseKey, exerciseId: ex.exerciseId, cardio: hits });
+  return { ...state, prs };
 }
 
 /**
@@ -79,8 +127,23 @@ export function workoutReducer(state, action) {
   const { now } = action;
   switch (action.type) {
     case "edit": {
-      // Cambiar kg, reps o RIR de una serie.
-      const sets = state.sets.map((s) => (s.id === action.setId ? { ...s, [action.field]: action.value } : s));
+      // Cambiar kg, reps o RIR de una serie (o tiempo, distancia, nivel y conteo en cardio).
+      const set = state.sets.find((s) => s.id === action.setId);
+      if (!set) return state;
+      const patch = { [action.field]: action.value };
+      // Corregir el tiempo a mano con el cronómetro andando: sigue corriendo desde el valor nuevo.
+      if (action.field === "durationSeconds") Object.assign(patch, { timed: true, timerStartedAt: set.timerStartedAt ? now : null });
+      const sets = state.sets.map((s) => (s.id === set.id ? { ...s, ...patch } : s));
+      return touch(withCardioPrs({ ...state, sets }, set.exerciseKey), now);
+    }
+    case "timerToggle": {
+      // Cronómetro de cardio: arrancar / pausar (uno solo a la vez). La primera vez arranca de cero, no del objetivo.
+      const set = state.sets.find((s) => s.id === action.setId);
+      if (!set || set.completedAt) return state;
+      const sets = state.sets.map((s) => {
+        if (s.id !== set.id || s.timerStartedAt) return stopTimer(s, now);
+        return { ...s, durationSeconds: s.timed ? s.durationSeconds || 0 : 0, timed: true, timerStartedAt: now };
+      });
       return touch({ ...state, sets }, now);
     }
     case "toggleDone": {
@@ -88,9 +151,10 @@ export function workoutReducer(state, action) {
       if (!set) return state;
       if (set.completedAt) {
         // Destildar: deja de contar y se va su aviso de récord.
-        return touch({ ...state, sets: state.sets.map((s) => (s.id === set.id ? { ...s, completedAt: null } : s)), prs: state.prs.filter((p) => p.setId !== set.id), rest: state.rest?.setId === set.id ? null : state.rest }, now);
+        const undone = { ...state, sets: state.sets.map((s) => (s.id === set.id ? { ...s, completedAt: null } : s)), prs: state.prs.filter((p) => p.setId !== set.id), rest: state.rest?.setId === set.id ? null : state.rest };
+        return touch(withCardioPrs(undone, set.exerciseKey), now);
       }
-      const done = { ...set, completedAt: iso(now) };
+      const done = { ...stopTimer(set, now), completedAt: iso(now) };
       const ex = exerciseOf(state, set.exerciseKey);
       let prs = state.prs;
       if (done.type === "working" && done.reps > 0) {
@@ -102,13 +166,16 @@ export function workoutReducer(state, action) {
       // Si terminó todas las series del ejercicio, el siguiente pasa a ser el actual.
       const pending = sets.some((s) => s.exerciseKey === done.exerciseKey && !s.completedAt);
       const nextKey = pending ? state.current : state.exercises.find((e) => sets.some((s) => s.exerciseKey === e.key && !s.completedAt))?.key ?? state.current;
-      return touch({ ...state, sets, prs, current: nextKey, rest: { setId: done.id, startedAt: now, endsAt: now + seconds * 1000, seconds } }, now);
+      const rest = seconds > 0 ? { setId: done.id, startedAt: now, endsAt: now + seconds * 1000, seconds } : null;
+      return touch(withCardioPrs({ ...state, sets, prs, current: nextKey, rest }, done.exerciseKey), now);
     }
     case "addSet": {
       const own = setsOf(state, action.exerciseKey);
       const last = [...own].reverse().find((s) => s.type === (action.setType ?? "working")) ?? own.at(-1);
       const ex = exerciseOf(state, action.exerciseKey);
-      const set = { id: action.id, exerciseKey: action.exerciseKey, exerciseId: ex.exerciseId, type: action.setType ?? "working", weightKg: last?.weightKg ?? null, reps: last?.reps ?? ex.prescription?.repMin ?? null, rir: null, completedAt: null };
+      const set = isCardio(ex.exercise)
+        ? { id: action.id, exerciseKey: action.exerciseKey, exerciseId: ex.exerciseId, type: "working", weightKg: null, reps: null, rir: null, completedAt: null, ...CARDIO_EMPTY, durationSeconds: last?.durationSeconds ?? null, level: last?.level ?? null }
+        : { id: action.id, exerciseKey: action.exerciseKey, exerciseId: ex.exerciseId, type: action.setType ?? "working", weightKg: last?.weightKg ?? null, reps: last?.reps ?? ex.prescription?.repMin ?? null, rir: null, completedAt: null };
       // Un calentamiento va antes de las series de trabajo; el resto, al final del ejercicio.
       const idx = state.sets.findIndex((s) => s.exerciseKey === action.exerciseKey && (set.type === "warmup" ? s.type !== "warmup" : false));
       const lastIdx = state.sets.map((s) => s.exerciseKey).lastIndexOf(action.exerciseKey);
@@ -162,7 +229,7 @@ export function workoutReducer(state, action) {
     case "notes":
       return touch({ ...state, session: { ...state.session, notes: action.value } }, now);
     case "finish":
-      return touch({ ...state, rest: null, session: { ...state.session, status: "done", endedAt: iso(now) } }, now);
+      return touch({ ...state, rest: null, sets: state.sets.map((s) => stopTimer(s, now)), session: { ...state.session, status: "done", endedAt: iso(now) } }, now);
     case "discard":
       return touch({ ...state, rest: null, session: { ...state.session, status: "discarded", endedAt: iso(now) } }, now);
     case "synced":
@@ -187,7 +254,22 @@ export function toSnapshot(state) {
       .map((s) => {
         const n = counters.get(s.exerciseKey) ?? 0;
         counters.set(s.exerciseKey, n + 1);
-        return { id: s.id, exerciseId: s.exerciseId, exerciseOrder: order.get(s.exerciseKey), setOrder: n, type: s.type, weightKg: s.weightKg, reps: s.reps, rir: s.rir, completedAt: s.completedAt, updatedAt: state.session.updatedAt };
+        return {
+          id: s.id,
+          exerciseId: s.exerciseId,
+          exerciseOrder: order.get(s.exerciseKey),
+          setOrder: n,
+          type: s.type,
+          weightKg: s.weightKg,
+          reps: s.reps,
+          rir: s.rir,
+          durationSeconds: s.durationSeconds ?? null,
+          distanceKm: s.distanceKm ?? null,
+          level: s.level ?? null,
+          count: s.count ?? null,
+          completedAt: s.completedAt,
+          updatedAt: state.session.updatedAt,
+        };
       }),
   };
 }
@@ -231,7 +313,18 @@ export function fromSavedSession(start, saved, extra, { newId }) {
     if (!data) continue;
     const key = newId();
     exercises.push({ ...data, key });
-    for (const s of group.sets) sets.push({ id: s.id, exerciseKey: key, exerciseId: s.exerciseId, type: s.type, weightKg: s.weightKg, reps: s.reps, rir: s.rir, completedAt: s.completedAt });
+    for (const s of group.sets)
+      sets.push({
+        id: s.id,
+        exerciseKey: key,
+        exerciseId: s.exerciseId,
+        type: s.type,
+        weightKg: s.weightKg,
+        reps: s.reps,
+        rir: s.rir,
+        completedAt: s.completedAt,
+        ...(isCardio(data.exercise) ? { ...CARDIO_EMPTY, durationSeconds: s.durationSeconds ?? null, distanceKm: s.distanceKm ?? null, level: s.level ?? null, count: s.count ?? null, timed: s.durationSeconds != null } : {}),
+      });
   }
   const pendingKey = exercises.find((e) => sets.some((s) => s.exerciseKey === e.key && !s.completedAt))?.key;
   return {

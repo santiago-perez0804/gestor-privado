@@ -87,3 +87,22 @@ export const FISICO_EXERCISES = [
   E("Rueda abdominal", "otro", "abdomen:P"),
   E("Curl de muñeca", "mancuernas", "antebrazo:P"),
 ];
+
+// Cardio: el tiempo va siempre; "fields" son los datos opcionales que pide cada uno (distance = km,
+// level = nivel/velocidad/inclinación con su etiqueta, count = saltos/pisos/pasos). Sin músculos:
+// el cardio no suma series al volumen semanal.
+const C = (name, equipment, fields, { level = null, count = null, notes = null } = {}) => ({ name, equipment, fields, levelLabel: level, countLabel: count, notes });
+
+export const FISICO_CARDIO = [
+  C("Saltar la cuerda", "otro", ["count"], { count: "saltos", notes: "Podés hacerlo en bloques (por ejemplo 5 × 2 min)." }),
+  C("Caminadora", "maquina", ["distance", "level"], { level: "inclinación" }),
+  C("Escaladora (escalera mecánica)", "maquina", ["count", "level"], { level: "nivel", count: "pisos" }),
+  C("Bicicleta fija", "maquina", ["level", "distance"], { level: "nivel" }),
+  C("Elíptico", "maquina", ["level", "distance"], { level: "nivel" }),
+  C("Remo ergómetro", "maquina", ["distance", "level"], { level: "resistencia" }),
+  C("Correr", "otro", ["distance"]),
+  C("Caminata", "otro", ["distance", "count"], { count: "pasos" }),
+  C("Bici", "otro", ["distance"]),
+  C("Natación", "otro", ["distance"]),
+  C("Burpees", "peso_corporal", ["count"], { count: "burpees" }),
+];
