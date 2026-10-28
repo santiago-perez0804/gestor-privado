@@ -3,7 +3,8 @@
 //   node scripts/migrateToSupabase.mjs                 → usa DATABASE_URL, SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY del .env
 //   node scripts/migrateToSupabase.mjs --dry-run       → prueba completa contra una base local temporal (no toca Supabase)
 //   node scripts/migrateToSupabase.mjs --pglite <dir>  → a una base PGlite local (para probar)
-//   --from <archivo.db>   base de origen (por defecto data/fisico.db; no se modifica)
+//   --from <archivo.db>   base SQLite de origen (no se modifica). Si no se indica: la base local de
+//                         la app (data/pg) si ya tiene los datos, o si no data/fisico.db.
 //   --files <carpeta>     carpeta de datos con las fotos, portadas, etc. (por defecto data/)
 //   --force               pisar el destino aunque ya tenga datos
 //   --skip-files          solo la base
@@ -16,7 +17,8 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { createDb } from "../src/db/pg.js";
 import { migrate } from "../src/db/pg/migrations.js";
-import { transferSqliteToPg } from "../src/db/transfer.js";
+import { transferToPg, sqliteSource, pgSource } from "../src/db/transfer.js";
+import { LOCAL_IMPORT_FLAG } from "../src/db/index.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
@@ -24,13 +26,42 @@ const flag = (n) => args.includes(n);
 const opt = (n, d) => (args.includes(n) ? args[args.indexOf(n) + 1] : d);
 
 const dataDir = resolve(opt("--files", join(__dirname, "..", "data")));
+const localPg = join(dataDir, "pg");
 const from = resolve(opt("--from", join(dataDir, "fisico.db")));
 const dry = flag("--dry-run");
 const pgliteDir = opt("--pglite", dry ? mkdtempSync(join(tmpdir(), "gestor-dry-")) : null);
 
-if (!existsSync(from)) {
-  console.error(`No encuentro la base de origen: ${from}`);
+// Con la app de escritorio abierta la base local está en uso (y podría cambiar mientras se copia).
+const appRunning = await fetch(`http://localhost:${process.env.PORT || 4000}/api/auth/session`, { signal: AbortSignal.timeout(1500) })
+  .then(() => true)
+  .catch(() => false);
+if (appRunning && !flag("--dry-run")) {
+  console.error("La app (o el server local) está abierta en este equipo: cerrala y volvé a correr el comando.");
   process.exit(1);
+}
+
+// Origen: la Postgres local de la app (si ya trajo los datos, tiene lo más nuevo) o el archivo SQLite.
+let source = null;
+let sourceDb = null;
+if (!flag("--from") && existsSync(localPg)) {
+  sourceDb = createDb();
+  await sourceDb.open({ dataDir: localPg });
+  const imported = await sourceDb
+    .prepare("SELECT value FROM settings WHERE key = ?")
+    .get(LOCAL_IMPORT_FLAG)
+    .catch(() => null);
+  if (imported && !JSON.parse(imported.value).skipped) source = { ...pgSource(sourceDb), label: `la base local de la app (${localPg})` };
+  else {
+    await sourceDb.close();
+    sourceDb = null;
+  }
+}
+if (!source) {
+  if (!existsSync(from)) {
+    console.error(`No encuentro la base de origen: ${from}`);
+    process.exit(1);
+  }
+  source = { ...sqliteSource(from), label: from };
 }
 if (!pgliteDir && !process.env.DATABASE_URL) {
   console.error("Falta DATABASE_URL (la conexión a Supabase) en el .env. Para probar sin tocar Supabase: --dry-run");
@@ -43,14 +74,17 @@ console.log(`Destino: ${pgliteDir ? `PGlite en ${pgliteDir}` : "Supabase (DATABA
 const applied = await migrate(db);
 if (applied.length) console.log(`Esquema creado: ${applied.join(", ")}`);
 
-console.log(`\nCopiando ${from} …`);
+console.log(`\nCopiando desde ${source.label} …`);
 let report;
 try {
-  report = await transferSqliteToPg({ sqlitePath: from, db, force: flag("--force"), log: (m) => console.log(m) });
+  report = await transferToPg({ source, db, force: flag("--force"), log: (m) => console.log(m) });
 } catch (err) {
   console.error(`\n✖ ${err.message}`);
   await db.close();
   process.exit(1);
+} finally {
+  await source.close();
+  await sourceDb?.close();
 }
 
 console.log(`\n${report.totalRows} filas copiadas en ${report.tables.filter((t) => t.rows).length} tablas.`);

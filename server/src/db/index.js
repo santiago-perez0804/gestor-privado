@@ -7,7 +7,7 @@
 // primera consulta hay que haber esperado `openDb()` (lo hacen index.js, la función de Vercel y los tests).
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, existsSync } from "node:fs";
 import { createDb } from "./pg.js";
 import { migrate } from "./pg/migrations.js";
 import { seedIfEmpty, ensureCardio } from "./pg/seed.js";
@@ -39,7 +39,8 @@ export function openDb({ url = process.env.DATABASE_URL, pgDir = process.env.PG_
     const applied = await migrate(db);
     if (applied.length) console.log(`[db] migraciones aplicadas: ${applied.join(", ")}`);
     const { seeded } = await seedIfEmpty(db);
-    if (seeded) console.log("[db] base nueva: biblioteca de ejercicios y hábitos de ejemplo cargados");
+    if (!url && !memory) await importLocalSqliteOnce();
+    else if (seeded) console.log("[db] base nueva: biblioteca de ejercicios y hábitos de ejemplo cargados");
     if (await ensureCardio(db)) console.log("[db] ejercicios de cardio agregados a la biblioteca");
     return db;
   })().catch((err) => {
@@ -47,6 +48,26 @@ export function openDb({ url = process.env.DATABASE_URL, pgDir = process.env.PG_
     throw err;
   });
   return opening;
+}
+
+export const LOCAL_IMPORT_FLAG = "local.importedFromSqlite";
+
+/**
+ * Server local (app de escritorio, desarrollo): la primera vez que arranca sobre Postgres local, trae
+ * todo lo que había en la base SQLite de antes (data/fisico.db), así no aparece vacía. Una sola vez:
+ * después la base es la local de Postgres (y fisico.db queda como respaldo).
+ */
+async function importLocalSqliteOnce() {
+  if (await db.prepare("SELECT 1 FROM settings WHERE key = ?").get(LOCAL_IMPORT_FLAG)) return;
+  const sqlitePath = join(dataDir, "fisico.db");
+  const { userDataIn, transferSqliteToPg } = await import("./transfer.js");
+  const mark = (info) => db.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(LOCAL_IMPORT_FLAG, JSON.stringify(info));
+  if (!existsSync(sqlitePath) || (await userDataIn(db)).length) return void (await mark({ at: nowIso(), skipped: true }));
+  console.log(`[db] primera vez sobre Postgres: trayendo los datos de ${sqlitePath}…`);
+  const report = await transferSqliteToPg({ sqlitePath, db });
+  if (report.problems.length) throw new Error(`No se pudieron traer los datos de fisico.db sin diferencias: ${report.problems.join(" | ")}`);
+  await mark({ at: nowIso(), from: sqlitePath, rows: report.totalRows });
+  console.log(`[db] listo: ${report.totalRows} filas traídas y verificadas (fisico.db queda como respaldo)`);
 }
 
 export function nowIso() {

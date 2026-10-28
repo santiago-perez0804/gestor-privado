@@ -1,11 +1,10 @@
-// Mudanza de la base SQLite (la de la PC) a Postgres (Supabase o PGlite), una sola vez.
-// - Trabaja sobre una COPIA del archivo: el original no se toca.
-// - Antes pone la copia al día con las migraciones viejas de SQLite (así tiene la misma forma que
-//   el esquema de Postgres).
-// - Copia todas las tablas conservando los ids, ajusta los contadores y verifica tabla por tabla
-//   (cantidad de filas y contenido).
-// - Las tablas que solo existían como respaldo de migraciones viejas (…_legacy) quedan en el archivo
-//   local; se informan.
+// Mudanza de datos a una base Postgres (Supabase o PGlite). El origen puede ser:
+// - la base SQLite de antes (server/data/fisico.db): se trabaja sobre una COPIA, puesta al día con
+//   las migraciones viejas de SQLite (así tiene la misma forma que el esquema de Postgres);
+// - otra base Postgres (la PGlite local de la app de escritorio, que tiene lo más nuevo).
+// Copia todas las tablas conservando los ids, ajusta los contadores y verifica tabla por tabla
+// (cantidad de filas y contenido). Las tablas que solo existían como respaldo de migraciones viejas
+// (…_legacy) no se copian; se informan.
 import { DatabaseSync } from "node:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
@@ -24,7 +23,20 @@ import { BASE_SCHEMA } from "./pg/schema.js";
 export const PG_TABLES = [...BASE_SCHEMA.matchAll(/CREATE TABLE IF NOT EXISTS (\w+)/g)].map((m) => m[1]);
 
 /** Tablas con datos del usuario: si alguna tiene filas en el destino, no se pisa sin --force. */
-const USER_DATA = ["weights", "workout_sessions", "expenses", "incomes", "accounts", "works", "outings", "projects", "artworks", "measurements", "photos", "plans"];
+export const USER_DATA = ["weights", "workout_sessions", "expenses", "incomes", "accounts", "works", "outings", "projects", "artworks", "measurements", "photos", "plans"];
+
+/** ¿La base Postgres tiene datos del usuario? Devuelve la lista ("weights (3)", …). */
+export async function userDataIn(db) {
+  const present = [];
+  for (const t of USER_DATA) {
+    const { n } = await db.prepare(`SELECT COUNT(*) AS n FROM ${t}`).get();
+    if (n > 0) present.push(`${t} (${n})`);
+  }
+  return present;
+}
+
+// ---------- orígenes ----------
+// Cada origen da: tablas, columnas (en minúscula) y filas con esas claves.
 
 /** Copia del archivo SQLite, al día con las migraciones de SQLite. */
 export function preparedSqliteCopy(sqlitePath) {
@@ -43,13 +55,46 @@ export function preparedSqliteCopy(sqlitePath) {
   return { db, cleanup: () => (db.close(), rmSync(dir, { recursive: true, force: true })) };
 }
 
-const sqliteTables = (sdb) => sdb.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'").all().map((r) => r.name);
-const sqliteColumns = (sdb, t) => sdb.prepare(`PRAGMA table_info(${t})`).all().map((c) => c.name);
+export function sqliteSource(sqlitePath) {
+  const { db: sdb, cleanup } = preparedSqliteCopy(sqlitePath);
+  const original = new Map(); // tabla → (minúscula → nombre real)
+  const colsOf = (t) => {
+    if (!original.has(t)) original.set(t, new Map(sdb.prepare(`PRAGMA table_info(${t})`).all().map((c) => [c.name.toLowerCase(), c.name])));
+    return original.get(t);
+  };
+  return {
+    label: "SQLite",
+    tables: async () => sdb.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'").all().map((r) => r.name),
+    columns: async (t) => [...colsOf(t).keys()],
+    count: async (t) => sdb.prepare(`SELECT COUNT(*) AS n FROM ${t}`).get().n,
+    rows: async (t, cols) => {
+      const real = colsOf(t);
+      return sdb
+        .prepare(`SELECT ${cols.map((c) => real.get(c)).join(", ")} FROM ${t}`)
+        .all()
+        .map((r) => Object.fromEntries(cols.map((c) => [c, r[real.get(c)]])));
+    },
+    close: async () => cleanup(),
+  };
+}
+
+/** Otra base Postgres (ya abierta) como origen. */
+export function pgSource(src) {
+  return {
+    label: "Postgres",
+    tables: async () => (await src.prepare("SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename <> 'schema_migrations'").all()).map((r) => r.tablename),
+    columns: async (t) => (await pgColumns(src, t)).map((c) => c.name),
+    count: async (t) => (await src.prepare(`SELECT COUNT(*) AS n FROM ${t}`).get()).n,
+    rows: async (t, cols) => (await src.prepare(`SELECT ${cols.join(", ")} FROM ${t}`).all()).map((r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k.toLowerCase(), v]))),
+    close: async () => {},
+  };
+}
+
 async function pgColumns(db, t) {
   return (await db.prepare("SELECT column_name AS name, data_type AS type FROM information_schema.columns WHERE table_schema = 'public' AND table_name = ? ORDER BY ordinal_position").all(t)).map((c) => ({ name: c.name, type: c.type }));
 }
 
-/** Valor de SQLite → valor para Postgres según el tipo de la columna destino. */
+/** Valor de origen → valor para Postgres según el tipo de la columna destino. */
 function convert(v, pgType) {
   if (v == null) return null;
   if (pgType === "integer" || pgType === "bigint") {
@@ -66,82 +111,81 @@ function convert(v, pgType) {
 const norm = (v) => (v == null ? null : typeof v === "number" ? Math.round(v * 1e6) / 1e6 : typeof v === "bigint" ? Number(v) : String(v));
 
 /**
- * @param {{ sqlitePath: string, db: ReturnType<import("./pg.js").createDb>, force?: boolean, log?: (m: string) => void }} opts
- *   db: la base Postgres destino, ya abierta y migrada.
+ * Copia todo de `source` a `db` (Postgres destino, ya abierta y migrada) y verifica.
+ * @param {{ source: ReturnType<typeof sqliteSource>, db: ReturnType<import("./pg.js").createDb>, force?: boolean, log?: (m: string) => void }} opts
  */
-export async function transferSqliteToPg({ sqlitePath, db, force = false, log = () => {} }) {
-  // ¿El destino ya tiene datos?
-  const present = [];
-  for (const t of USER_DATA) {
-    const { n } = await db.prepare(`SELECT COUNT(*) AS n FROM ${t}`).get();
-    if (n > 0) present.push(`${t} (${n})`);
-  }
+export async function transferToPg({ source, db, force = false, log = () => {} }) {
+  const present = await userDataIn(db);
   if (present.length && !force) {
     const e = new Error(`El destino ya tiene datos: ${present.join(", ")}. Para pisarlos, usá --force.`);
     e.code = "TARGET_NOT_EMPTY";
     throw e;
   }
+  const report = { tables: [], skipped: [], totalRows: 0, problems: [] };
+  const inSource = new Set(await source.tables());
+  for (const t of inSource) if (!PG_TABLES.includes(t)) report.skipped.push({ table: t, rows: await source.count(t) });
 
-  const { db: sdb, cleanup } = preparedSqliteCopy(sqlitePath);
-  const report = { tables: [], skipped: [], files: null, totalRows: 0 };
-  try {
-    const inSqlite = new Set(sqliteTables(sdb));
-    report.skipped = [...inSqlite].filter((t) => !PG_TABLES.includes(t)).map((t) => ({ table: t, rows: sdb.prepare(`SELECT COUNT(*) AS n FROM ${t}`).get().n }));
+  // Columnas a copiar por tabla: las que existen en los dos lados.
+  const plan = new Map();
+  for (const t of PG_TABLES) {
+    if (!inSource.has(t)) continue;
+    const pgCols = await pgColumns(db, t);
+    const srcCols = new Set(await source.columns(t));
+    plan.set(t, { cols: pgCols.filter((c) => srcCols.has(c.name)), dropped: [...srcCols].filter((c) => !pgCols.some((p) => p.name === c)) });
+  }
 
-    await db.tx(async () => {
-      await db.exec(`TRUNCATE ${PG_TABLES.join(", ")} RESTART IDENTITY CASCADE`);
-      for (const t of PG_TABLES) {
-        if (!inSqlite.has(t)) {
-          report.tables.push({ table: t, rows: 0, note: "no existía en SQLite" });
-          continue;
-        }
-        const pgCols = await pgColumns(db, t);
-        const sCols = new Map(sqliteColumns(sdb, t).map((c) => [c.toLowerCase(), c]));
-        const cols = pgCols.filter((c) => sCols.has(c.name));
-        const missing = [...sCols.keys()].filter((c) => !pgCols.some((p) => p.name === c));
-        const rows = sdb.prepare(`SELECT ${cols.map((c) => sCols.get(c.name)).join(", ")} FROM ${t}`).all();
-        const batch = Math.max(1, Math.floor(30000 / Math.max(1, cols.length)));
-        for (let i = 0; i < rows.length; i += batch) {
-          const chunk = rows.slice(i, i + batch);
-          const values = chunk.map(() => `(${cols.map(() => "?").join(", ")})`).join(", ");
-          const params = chunk.flatMap((r) => cols.map((c) => convert(r[sCols.get(c.name)], c.type)));
-          await db.prepare(`INSERT INTO ${t} (${cols.map((c) => c.name).join(", ")}) VALUES ${values}`).run(...params);
-        }
-        report.tables.push({ table: t, rows: rows.length, ...(missing.length ? { droppedColumns: missing } : {}) });
-        report.totalRows += rows.length;
-        if (rows.length) log(`  ${t}: ${rows.length}`);
-      }
-      // Los contadores de ids siguen desde el máximo copiado.
-      for (const t of PG_TABLES) {
-        const hasIdentity = await db.prepare("SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = ? AND column_name = 'id' AND is_identity = 'YES'").get(t);
-        if (hasIdentity) await db.prepare(`SELECT setval(pg_get_serial_sequence('${t}', 'id'), COALESCE((SELECT MAX(id) FROM ${t}), 1), (SELECT MAX(id) FROM ${t}) IS NOT NULL)`).get();
-      }
-    });
-
-    // Verificación: misma cantidad de filas y mismo contenido, tabla por tabla.
-    const problems = [];
+  await db.tx(async () => {
+    await db.exec(`TRUNCATE ${PG_TABLES.join(", ")} RESTART IDENTITY CASCADE`);
     for (const t of PG_TABLES) {
-      if (!inSqlite.has(t)) continue;
-      const pgCols = await pgColumns(db, t);
-      const sCols = new Map(sqliteColumns(sdb, t).map((c) => [c.toLowerCase(), c]));
-      const cols = pgCols.filter((c) => sCols.has(c.name)).map((c) => c.name);
-      const order = cols.includes("id") ? "id" : cols.slice(0, 3).join(", ");
-      const a = sdb.prepare(`SELECT ${cols.map((c) => sCols.get(c)).join(", ")} FROM ${t} ORDER BY ${cols.includes("id") ? sCols.get("id") : cols.slice(0, 3).map((c) => sCols.get(c)).join(", ")}`).all();
-      const b = await db.prepare(`SELECT ${cols.join(", ")} FROM ${t} ORDER BY ${order}`).all();
-      if (a.length !== b.length) {
-        problems.push(`${t}: ${a.length} filas en SQLite y ${b.length} en Postgres`);
+      if (!plan.has(t)) {
+        report.tables.push({ table: t, rows: 0, note: `no existía en ${source.label}` });
         continue;
       }
-      // Postgres ordena textos distinto que SQLite: se compara como conjunto.
-      const key = (r, get) => JSON.stringify(cols.map((c) => norm(get(r, c))));
-      const sa = a.map((r) => key(r, (row, c) => row[sCols.get(c)])).sort();
-      const sb = b.map((r) => key(r, (row, c) => row[Object.keys(row).find((k) => k.toLowerCase() === c)])).sort();
-      const diff = sa.findIndex((v, i) => v !== sb[i]);
-      if (diff >= 0) problems.push(`${t}: el contenido no coincide (primera diferencia: ${sa[diff].slice(0, 160)} ≠ ${sb[diff]?.slice(0, 160)})`);
+      const { cols, dropped } = plan.get(t);
+      const rows = await source.rows(t, cols.map((c) => c.name));
+      const batch = Math.max(1, Math.floor(30000 / Math.max(1, cols.length)));
+      for (let i = 0; i < rows.length; i += batch) {
+        const chunk = rows.slice(i, i + batch);
+        const values = chunk.map(() => `(${cols.map(() => "?").join(", ")})`).join(", ");
+        const params = chunk.flatMap((r) => cols.map((c) => convert(r[c.name], c.type)));
+        await db.prepare(`INSERT INTO ${t} (${cols.map((c) => c.name).join(", ")}) VALUES ${values}`).run(...params);
+      }
+      report.tables.push({ table: t, rows: rows.length, ...(dropped.length ? { droppedColumns: dropped } : {}) });
+      report.totalRows += rows.length;
+      if (rows.length) log(`  ${t}: ${rows.length}`);
     }
-    report.problems = problems;
-    return report;
+    // Los contadores de ids siguen desde el máximo copiado.
+    for (const t of PG_TABLES) {
+      const hasIdentity = await db.prepare("SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = ? AND column_name = 'id' AND is_identity = 'YES'").get(t);
+      if (hasIdentity) await db.prepare(`SELECT setval(pg_get_serial_sequence('${t}', 'id'), COALESCE((SELECT MAX(id) FROM ${t}), 1), (SELECT MAX(id) FROM ${t}) IS NOT NULL)`).get();
+    }
+  });
+
+  // Verificación: misma cantidad de filas y mismo contenido, tabla por tabla (como conjunto: cada
+  // motor ordena los textos a su manera).
+  for (const [t, { cols }] of plan) {
+    const names = cols.map((c) => c.name);
+    const a = await source.rows(t, names);
+    const b = (await db.prepare(`SELECT ${names.join(", ")} FROM ${t}`).all()).map((r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k.toLowerCase(), v])));
+    if (a.length !== b.length) {
+      report.problems.push(`${t}: ${a.length} filas en el origen y ${b.length} en el destino`);
+      continue;
+    }
+    const key = (r) => JSON.stringify(names.map((c) => norm(r[c])));
+    const sa = a.map(key).sort();
+    const sb = b.map(key).sort();
+    const diff = sa.findIndex((v, i) => v !== sb[i]);
+    if (diff >= 0) report.problems.push(`${t}: el contenido no coincide (primera diferencia: ${sa[diff].slice(0, 160)} ≠ ${sb[diff]?.slice(0, 160)})`);
+  }
+  return report;
+}
+
+/** Atajo: de un archivo SQLite a Postgres. */
+export async function transferSqliteToPg({ sqlitePath, db, force = false, log }) {
+  const source = sqliteSource(sqlitePath);
+  try {
+    return await transferToPg({ source, db, force, log });
   } finally {
-    cleanup();
+    await source.close();
   }
 }

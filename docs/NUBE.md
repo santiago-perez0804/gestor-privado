@@ -75,7 +75,7 @@ Si usás Google o Dropbox, agregá esas dos URLs de retorno en sus consolas:
 
 ## 4. Mudar tus datos (una vez)
 
-1. **Cerrá la app de escritorio**, así nadie escribe en la base mientras se copia.
+1. **Cerrá la app de escritorio** (también desde el ícono junto al reloj), así nadie escribe en la base mientras se copia. Si está abierta, el script te avisa y no arranca.
 2. En la raíz del proyecto creá (o completá) el archivo `.env` con `DATABASE_URL`, `SUPABASE_URL` y
    `SUPABASE_SERVICE_ROLE_KEY` (los mismos valores que en Vercel). El `.env` no se sube a GitHub.
 3. Probá primero (no toca Supabase):
@@ -92,8 +92,9 @@ Si usás Google o Dropbox, agregá esas dos URLs de retorno en sus consolas:
    node scripts/migrateToSupabase.mjs
    ```
 
-   - Copia la base (tu archivo `server/data/fisico.db` no se modifica) y sube fotos, portadas,
-     atril y certificados.
+   - Copia tus datos y sube fotos, portadas, atril y certificados.
+   - Toma los datos de la base local de la app (`server/data/pg`), que es la más nueva. Si todavía no
+     la abriste con esta versión, los toma de `server/data/fisico.db`. Ninguno de los dos se modifica.
    - Si Supabase ya tiene datos, se frena; para pisarlos, `--force`.
 5. Entrá a `https://TU-DOMINIO`, iniciá sesión y revisá que esté todo.
 
