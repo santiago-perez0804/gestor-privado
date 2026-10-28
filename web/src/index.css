@@ -265,6 +265,16 @@ input:disabled {
   display: none;
 }
 
+/* En el celular la fila de rutinas se desliza de costado sin barra; en escritorio es una lista con scroll fino. */
+@media (max-width: 1023.98px) {
+  .thin-scroll.no-scrollbar-mobile {
+    scrollbar-width: none;
+  }
+  .thin-scroll.no-scrollbar-mobile::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 .sidebar-link:not([aria-current="page"]):hover {
   background: var(--surface-alt);
   color: var(--text);

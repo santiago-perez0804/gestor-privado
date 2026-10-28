@@ -25,8 +25,8 @@ export function RoutineExercisesTable({ items, onReorder, onEdit, onRemove }) {
     );
 
   return (
-    <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--border)" }}>
-      <div className="hidden md:grid grid-cols-[2.25rem_minmax(0,1fr)_5.5rem_4rem_4.5rem_minmax(0,9rem)_minmax(0,7.5rem)_2.5rem] gap-3 px-3 py-2.5 text-[11px]" style={{ color: "var(--text-faint)", borderBottom: "1px solid var(--border)" }}>
+    <div className="rounded-xl overflow-hidden fit:min-h-0 fit:flex fit:flex-col" style={{ border: "1px solid var(--border)" }}>
+      <div className="hidden md:grid fit:shrink-0 grid-cols-[2.25rem_minmax(0,1fr)_5.5rem_4rem_4.5rem_minmax(0,9rem)_minmax(0,7.5rem)_2.5rem] gap-3 px-3 py-2.5 text-[11px]" style={{ color: "var(--text-faint)", borderBottom: "1px solid var(--border)" }}>
         <span />
         <span>Ejercicio</span>
         <span>Series × reps</span>
@@ -36,7 +36,8 @@ export function RoutineExercisesTable({ items, onReorder, onEdit, onRemove }) {
         <span>Próxima</span>
         <span />
       </div>
-      <ol>
+      {/* En escritorio con alto fijo, la lista scrollea sola y la cabecera queda quieta. */}
+      <ol className="thin-scroll fit:min-h-0 fit:overflow-y-auto">
         {rows.map((it, i) => {
           const next = nextText(it.next, it.exercise);
           return (

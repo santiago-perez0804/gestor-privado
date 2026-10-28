@@ -10,7 +10,7 @@ import { ExerciseFormModal } from "./ExerciseFormModal.jsx";
  * (se importa con los músculos ya traducidos) y el alta de un ejercicio propio.
  * `onPick(exercise)` recibe el ejercicio elegido (ya existente en la biblioteca propia).
  */
-export function ExerciseSearch({ onPick, muscle: initialMuscle = "", placeholder = "Buscar en la biblioteca: «face pull», «bíceps», «polea»…", autoFocus = false }) {
+export function ExerciseSearch({ onPick, muscle: initialMuscle = "", placeholder = "Buscar en la biblioteca: «face pull», «bíceps», «polea»…", autoFocus = false, dropUp = false }) {
   const [q, setQ] = useState("");
   const [muscle, setMuscle] = useState(initialMuscle);
   const [open, setOpen] = useState(false);
@@ -88,7 +88,7 @@ export function ExerciseSearch({ onPick, muscle: initialMuscle = "", placeholder
         </select>
       </div>
       {open && (
-        <div className="absolute left-0 right-0 top-12 z-30 rounded-xl overflow-hidden" style={{ background: "var(--surface)", border: "1px solid var(--border)", boxShadow: "0 20px 50px -20px rgba(0,0,0,.6)" }}>
+        <div className={`absolute left-0 right-0 z-30 rounded-xl overflow-hidden top-12 ${dropUp ? "fit:top-auto fit:bottom-12" : ""}`} style={{ background: "var(--surface)", border: "1px solid var(--border)", boxShadow: "0 20px 50px -20px rgba(0,0,0,.6)" }}>
           <ul className="thin-scroll max-h-72 overflow-y-auto" role="listbox" aria-label="Ejercicios">
             {results.map((e) => (
               <li key={e.id}>

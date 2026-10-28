@@ -96,7 +96,7 @@ export function PlanRutinas() {
   const short = plan?.shortMuscles ?? [];
 
   return (
-    <PageTransition>
+    <PageTransition className="fit:flex-1 fit:min-h-0 fit:flex fit:flex-col">
       <PageBar crumb={plan ? `Físico · ${plan.isActive ? "Plan activo" : "Plan"}` : "Físico"} title={plan ? plan.name : "Plan y rutinas"}>
         {plans.length > 1 && (
           <select value={plan?.id ?? ""} onChange={(e) => navigate(`/fisico/plan/${e.target.value}`)} aria-label="Elegir plan" className="h-9 rounded-lg px-2 text-sm max-w-48">
@@ -128,16 +128,16 @@ export function PlanRutinas() {
       {!plan ? (
         <EmptyPlan onCreate={() => setModal({ kind: "newPlan" })} />
       ) : (
-        <div className="space-y-4 lg:space-y-0">
+        <div className="space-y-4 lg:space-y-0 fit:flex-1 fit:min-h-0 fit:flex fit:flex-col">
           {!plan.isActive && (
-            <p className="flex flex-wrap items-center gap-2 text-sm rounded-xl px-4 py-2.5 lg:rounded-none lg:px-7" style={{ background: "color-mix(in srgb, var(--status-warning) 10%, transparent)" }}>
+            <p className="flex flex-wrap items-center gap-2 text-sm rounded-xl px-4 py-2.5 lg:rounded-none lg:px-7 fit:shrink-0" style={{ background: "color-mix(in srgb, var(--status-warning) 10%, transparent)" }}>
               Este plan no es el activo.
               <button onClick={() => act(() => api.activatePlan(plan.id))} className="ghost-action font-semibold px-1" style={{ color: "var(--accent-strong)" }}>
                 Hacerlo activo
               </button>
             </p>
           )}
-          <section className="grid gap-3 grid-cols-2 lg:grid-cols-4 lg:gap-0 lg:border-b lg:[&>*]:border-r lg:[&>*:last-child]:border-r-0">
+          <section className="fit:shrink-0 grid gap-3 grid-cols-2 lg:grid-cols-4 lg:gap-0 lg:border-b lg:[&>*]:border-r lg:[&>*:last-child]:border-r-0">
             <StatCell label="Objetivo" value={plan.goal || "Sin objetivo"} sub={priorityText(priority)} />
             <StatCell label="Duración" value={plan.currentWeek ? `Semana ${Math.min(plan.currentWeek, plan.weeks || plan.currentWeek)}${plan.weeks ? ` de ${plan.weeks}` : ""}` : plan.startDate ? "Empieza pronto" : "Sin fecha de inicio"}>
               {plan.currentWeek && plan.weeks ? (
@@ -154,18 +154,19 @@ export function PlanRutinas() {
             <StatCell label="Descarga" value={plan.deloadWeek ? `Semana ${plan.deloadWeek}${plan.isDeloadWeek ? " · es esta" : ""}` : "Sin descarga"} sub={plan.deloadWeek ? "Mitad de series, mismo peso" : null} />
           </section>
 
-          <Panel className="lg:border-b">
+          <Panel className="lg:border-b fit:shrink-0">
             <h2 className="text-[15px] font-semibold mb-3">Tu semana tipo</h2>
             <WeekScheduleEditor key={`${plan.id}-${version}`} plan={plan} onChanged={reload} />
           </Panel>
 
-          <div className="grid gap-4 lg:gap-0 lg:grid-cols-[minmax(14rem,17rem)_minmax(0,1fr)]">
-            <Panel className="lg:border-r">
-              <p className="text-[11px] font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--text-faint)" }}>
+          {/* Con alto fijo (fit): solo scrollean la lista de rutinas y la de ejercicios. */}
+          <div className="grid gap-4 lg:gap-0 lg:grid-cols-[minmax(14rem,17rem)_minmax(0,1fr)] fit:flex-1 fit:min-h-0 fit:grid-rows-[minmax(0,1fr)]">
+            <Panel className="lg:border-r fit:flex fit:flex-col fit:min-h-0">
+              <p className="text-[11px] font-semibold uppercase tracking-wider mb-3 fit:shrink-0" style={{ color: "var(--text-faint)" }}>
                 Rutinas · {routines.length}
               </p>
               {routines.length ? (
-                <ul className="space-y-2 max-lg:flex max-lg:gap-2 max-lg:space-y-0 max-lg:overflow-x-auto no-scrollbar">
+                <ul className="thin-scroll space-y-2 max-lg:flex max-lg:gap-2 max-lg:space-y-0 max-lg:overflow-x-auto no-scrollbar-mobile fit:min-h-0 fit:overflow-y-auto fit:-mr-3 fit:pr-3">
                   {routines.map((r) => {
                     const on = r.id === routine?.id;
                     const days = daysOf(r.id);
@@ -193,10 +194,10 @@ export function PlanRutinas() {
               )}
             </Panel>
 
-            <Panel>
+            <Panel className="fit:flex fit:flex-col fit:min-h-0">
               {routine ? (
-                <div className="space-y-4">
-                  <div className="flex items-start gap-3">
+                <div className="space-y-4 fit:flex fit:flex-col fit:min-h-0">
+                  <div className="flex items-start gap-3 fit:shrink-0">
                     <div className="min-w-0 mr-auto">
                       <h2 className="text-xl font-semibold truncate">
                         {routine.name}
@@ -216,7 +217,7 @@ export function PlanRutinas() {
                     </Link>
                   </div>
                   {routineChips.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5">
+                    <div className="flex flex-wrap gap-1.5 fit:shrink-0">
                       {routineChips.map(([m, v]) => (
                         <MuscleChip key={m} muscle={m} value={v} priority={priority.includes(m)} />
                       ))}
@@ -228,15 +229,15 @@ export function PlanRutinas() {
                     onEdit={(it) => setModal({ kind: "item", data: it })}
                     onRemove={(it) => act(() => api.deleteRoutineItem(it.id))}
                   />
-                  <p className="text-[11px]" style={{ color: "var(--text-faint)" }}>
+                  <p className="text-[11px] fit:shrink-0" style={{ color: "var(--text-faint)" }}>
                     Esfuerzo en RIR: repeticiones que te quedaban en reserva. RIR 1–2 = cerca del fallo sin llegar.
                   </p>
-                  <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] items-start">
+                  <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] items-start fit:shrink-0">
                     <div>
                       <p className="text-xs font-semibold mb-2" style={{ color: "var(--text-muted)" }}>
                         Agregar ejercicio
                       </p>
-                      <ExerciseSearch onPick={addExercise} muscle={searchMuscle} />
+                      <ExerciseSearch onPick={addExercise} muscle={searchMuscle} dropUp />
                     </div>
                     {short.length > 0 && (
                       <div className="flex gap-2.5 rounded-xl p-3.5 text-sm" style={{ background: "color-mix(in srgb, var(--status-warning) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--status-warning) 30%, transparent)" }}>

@@ -29,7 +29,9 @@ export default function App() {
   // mantienen su columna angosta.
   const wide = pathname.startsWith("/gastos") || pathname.startsWith("/ocio") || pathname.startsWith("/fisico");
   const finanzasHome = pathname === "/gastos" || pathname === "/gastos/";
-  const desktop = wide ? `lg:max-w-none lg:p-0 ${finanzasHome ? "lg:h-full" : ""}` : "lg:py-8";
+  // Plan y rutinas: alto fijo (solo scrollean la lista de rutinas y la de ejercicios).
+  const planPage = /^\/fisico\/plan(\/|$)/.test(pathname);
+  const desktop = wide ? `lg:max-w-none lg:p-0 ${finanzasHome ? "lg:h-full" : planPage ? "fit:h-full" : ""}` : "lg:py-8";
   return (
     <div className="min-h-screen print:min-h-0" style={{ background: "var(--bg)" }}>
       <AppShell>

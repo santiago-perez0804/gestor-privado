@@ -35,7 +35,7 @@ export function FisicoLayout() {
   }, [pathname, bump]);
   return (
     <FisicoContext.Provider value={value}>
-      <div className="fisico-layout">
+      <div className="fisico-layout fit:h-full fit:flex fit:flex-col">
         <ModuleTabStrip moduleId="fisico" />
         {running && (
           <Link to="/fisico/entreno" className="flex items-center gap-2.5 rounded-xl px-4 py-3 mb-4 lg:m-4 text-sm font-semibold" style={{ background: "var(--accent)", color: "var(--on-accent)" }}>
