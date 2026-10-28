@@ -5,6 +5,7 @@
 import { randomBytes } from "node:crypto";
 import { encryptSecret, decryptSecret, hasEncryptionKey } from "../../lib/secretBox.js";
 import { backoffDelay } from "../catalog/http.js";
+import { publicOrigin } from "../../lib/publicUrl.js";
 
 const AUTH_URL = "https://www.dropbox.com/oauth2/authorize";
 // Sobreescribibles solo para las pruebas (un Dropbox falso local).
@@ -29,7 +30,7 @@ export function dropboxConfig() {
   return {
     appKey: process.env.DROPBOX_APP_KEY,
     appSecret: process.env.DROPBOX_APP_SECRET,
-    redirectUri: process.env.DROPBOX_REDIRECT_URI || `http://localhost:${process.env.PORT || 4000}/api/dropbox/callback`,
+    redirectUri: process.env.DROPBOX_REDIRECT_URI || `${publicOrigin()}/api/dropbox/callback`,
   };
 }
 

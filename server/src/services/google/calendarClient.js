@@ -5,6 +5,7 @@ import { encryptSecret, decryptSecret, hasEncryptionKey } from "../../lib/secret
 import { backoffDelay } from "../catalog/http.js";
 import { getAccount, saveAccount } from "./sync.js";
 import { TIME_ZONE } from "./eventMapping.js";
+import { publicOrigin } from "../../lib/publicUrl.js";
 
 const AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -28,7 +29,7 @@ export function googleConfig() {
   return {
     clientId: process.env.GOOGLE_CLIENT_ID,
     clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-    redirectUri: process.env.GOOGLE_REDIRECT_URI || `http://localhost:${process.env.PORT || 4000}/api/google/callback`,
+    redirectUri: process.env.GOOGLE_REDIRECT_URI || `${publicOrigin()}/api/google/callback`,
     scope: process.env.GOOGLE_CALENDAR_SCOPE || DEFAULT_SCOPE,
   };
 }

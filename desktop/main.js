@@ -9,7 +9,51 @@ const { makeFrogIconPng } = require("./icon.js");
 
 const ROOT = join(__dirname, "..");
 const PORT = process.env.PORT || 4000;
-const BASE_URL = `http://localhost:${PORT}`;
+const LOCAL_URL = `http://localhost:${PORT}`;
+// Con GESTOR_URL (la app en la nube, p. ej. https://mi-gestor.vercel.app) la app de escritorio abre
+// esa: los mismos datos que el celular y sin server local. Sin GESTOR_URL, el server local de siempre.
+let BASE_URL = LOCAL_URL;
+let cloudMode = false;
+
+/** GESTOR_URL de las variables del sistema o del .env (raíz del proyecto, o la carpeta del usuario si está empaquetada). */
+function readCloudUrl() {
+  let value = process.env.GESTOR_URL;
+  if (!value) {
+    const envFile = app.isPackaged ? join(app.getPath("userData"), ".env") : join(ROOT, ".env");
+    try {
+      const line = fs.readFileSync(envFile, "utf8").split(/\r?\n/).find((l) => /^\s*GESTOR_URL\s*=/.test(l));
+      value = line?.split("=").slice(1).join("=").trim().replace(/^["']|["']$/g, "");
+    } catch {
+      // sin .env: modo local
+    }
+  }
+  if (!value) return null;
+  try {
+    const u = new URL(value);
+    return u.protocol === "https:" ? u.origin : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Desde la app en la nube: solo se navega dentro de ella (y a los permisos de Google/Dropbox); el resto se abre en el navegador. */
+const OAUTH_HOSTS = ["accounts.google.com", "www.dropbox.com", "dropbox.com"];
+function keepInsideApp(win) {
+  win.webContents.on("will-navigate", (e, url) => {
+    try {
+      const u = new URL(url);
+      if (u.origin === new URL(BASE_URL).origin || OAUTH_HOSTS.includes(u.hostname)) return;
+    } catch {
+      // URL rara: afuera
+    }
+    e.preventDefault();
+    shell.openExternal(url);
+  });
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:/.test(url)) shell.openExternal(url);
+    return { action: "deny" };
+  });
+}
 const HOTKEY = "CommandOrControl+Alt+S";
 const PREFS_PATH = () => join(app.getPath("userData"), "frog-prefs.json");
 const LOG_PATH = () => join(app.getPath("userData"), "desktop.log");
@@ -350,6 +394,10 @@ function openApp(route = "/fisico") {
       }
     });
   }
+  if (cloudMode && !appWindow.__guarded) {
+    keepInsideApp(appWindow);
+    appWindow.__guarded = true;
+  }
   appWindow.loadURL(url);
   appWindow.show();
   appWindow.focus();
@@ -563,13 +611,20 @@ if (!app.requestSingleInstanceLock()) {
     loadPrefs();
     // Reescribe la entrada en cada arranque: corrige registros viejos y sigue a la carpeta si se mueve.
     setOpenAtLogin(prefs.autoStart);
-    await buildIfStale();
-    try {
-      await ensureServer();
-    } catch (err) {
-      console.error("[desktop]", err.message);
-      app.quit();
-      return;
+    const cloudUrl = readCloudUrl();
+    if (cloudUrl) {
+      BASE_URL = cloudUrl;
+      cloudMode = true;
+      logEvent(`modo nube: ${cloudUrl}`);
+    } else {
+      await buildIfStale();
+      try {
+        await ensureServer();
+      } catch (err) {
+        console.error("[desktop]", err.message);
+        app.quit();
+        return;
+      }
     }
     // Después de un `npm run build` el HTML cambia: evitamos que Electron sirva uno viejo.
     await session.defaultSession.clearCache();
