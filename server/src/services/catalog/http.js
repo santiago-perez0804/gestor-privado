@@ -72,14 +72,14 @@ export function createCache(db) {
   const setStmt = db.prepare("INSERT INTO catalog_cache (key, value, fetchedAt) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, fetchedAt = excluded.fetchedAt");
   return {
     /** Devuelve lo guardado si no venció; si `allowStale`, también lo vencido (para cuando no hay red). */
-    get(key, ttlMs, { allowStale = false } = {}) {
-      const row = getStmt.get(key);
+    async get(key, ttlMs, { allowStale = false } = {}) {
+      const row = await getStmt.get(key);
       if (!row) return null;
       const fresh = Date.now() - new Date(row.fetchedAt).getTime() < ttlMs;
       return fresh || allowStale ? JSON.parse(row.value) : null;
     },
-    set(key, value) {
-      setStmt.run(key, JSON.stringify(value), new Date().toISOString());
+    async set(key, value) {
+      await setStmt.run(key, JSON.stringify(value), new Date().toISOString());
     },
   };
 }
@@ -89,14 +89,14 @@ export function createCache(db) {
  * devuelve eso: la app sigue andando sin red.
  */
 export async function cached(cache, key, ttlMs, load) {
-  const hit = cache.get(key, ttlMs);
+  const hit = await cache.get(key, ttlMs);
   if (hit) return hit;
   try {
     const value = await load();
-    cache.set(key, value);
+    await cache.set(key, value);
     return value;
   } catch (err) {
-    const stale = cache.get(key, ttlMs, { allowStale: true });
+    const stale = await cache.get(key, ttlMs, { allowStale: true });
     if (stale) return stale;
     throw err;
   }

@@ -6,15 +6,15 @@ const LAST_RATES_KEY = "last_exchange_rates";
 export const RATE_TYPES = ["tarjeta", "blue", "bolsa", "oficial", "cripto"];
 let cache = null;
 
-function saveLastRates(rates) {
-  db.prepare(
+async function saveLastRates(rates) {
+  await db.prepare(
     "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
   ).run(LAST_RATES_KEY, JSON.stringify(rates));
 }
 
 /** Últimas cotizaciones guardadas (sirven sin internet, p. ej. para generar recurrentes en USD). */
-export function lastKnownRates() {
-  const row = db.prepare("SELECT value FROM settings WHERE key = ?").get(LAST_RATES_KEY);
+export async function lastKnownRates() {
+  const row = await db.prepare("SELECT value FROM settings WHERE key = ?").get(LAST_RATES_KEY);
   try {
     return row ? JSON.parse(row.value) : null;
   } catch {
@@ -22,8 +22,8 @@ export function lastKnownRates() {
   }
 }
 
-export function lastKnownRate(type = "tarjeta", side = "venta") {
-  return lastKnownRates()?.[type]?.[side] ?? null;
+export async function lastKnownRate(type = "tarjeta", side = "venta") {
+  return (await lastKnownRates())?.[type]?.[side] ?? null;
 }
 
 /** Todas las cotizaciones: { tarjeta: {compra, venta}, blue: {...}, ..., fetchedAt }. */
@@ -38,7 +38,7 @@ export async function fetchRates() {
     const rates = { fetchedAt: new Date().toISOString() };
     for (const r of list) if (RATE_TYPES.includes(r.casa)) rates[r.casa] = { compra: r.compra, venta: r.venta };
     cache = { rates, fetchedAtMs: Date.now() };
-    saveLastRates(rates);
+    await saveLastRates(rates);
     return rates;
   } finally {
     clearTimeout(timeout);
@@ -54,8 +54,8 @@ export default function registerExchangeRateRoutes(app) {
       const rates = await fetchRates();
       res.json({ rate: rates[type][side], type, side, fetchedAt: rates.fetchedAt, source: "dolarapi" });
     } catch (err) {
-      const fallback = lastKnownRate(type, side);
-      if (fallback) return res.json({ rate: fallback, type, side, fetchedAt: lastKnownRates().fetchedAt, source: "guardada", stale: true });
+      const fallback = await lastKnownRate(type, side);
+      if (fallback) return res.json({ rate: fallback, type, side, fetchedAt: (await lastKnownRates()).fetchedAt, source: "guardada", stale: true });
       res.status(502).json({ error: "unavailable", message: err.message });
     }
   });
@@ -64,7 +64,7 @@ export default function registerExchangeRateRoutes(app) {
     try {
       res.json(await fetchRates());
     } catch (err) {
-      const fallback = lastKnownRates();
+      const fallback = await lastKnownRates();
       if (fallback) return res.json({ ...fallback, stale: true });
       res.status(502).json({ error: "unavailable", message: err.message });
     }

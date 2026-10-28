@@ -20,3 +20,6 @@ server/data/*.db-shm
 server/data/covers/
 server/data/artworks/
 server/data/imports/
+
+# Base local de desarrollo (PGlite)
+server/data/pg/

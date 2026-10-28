@@ -1,7 +1,6 @@
 // Portadas: al agregar una obra se descarga la imagen y se guarda en data/covers, así la
 // biblioteca se ve sin red y no depende de que el catálogo siga sirviendo esa URL.
-import { writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { storage, localStore } from "../storage/index.js";
 import { createHash } from "node:crypto";
 
 const MAX_BYTES = 5 * 1024 * 1024;
@@ -33,12 +32,13 @@ export function isAllowedCoverUrl(url) {
 }
 
 /**
- * Descarga `url` y la guarda como `<workId>-<hash>.<ext>`. Devuelve el nombre del archivo
- * (relativo a coversDir) o null si no es una imagen válida o el origen no está permitido.
+ * Descarga `url` y la guarda como `<workId>-<hash>.<ext>` en el almacenamiento de portadas (o en la
+ * carpeta `dir`, en los tests). Devuelve el nombre del archivo o null si no es una imagen válida o
+ * el origen no está permitido.
  * Las redirecciones se siguen a mano (Open Library redirige a archive.org) y cada salto se
  * vuelve a validar.
  */
-export async function downloadCover(url, workId, coversDir, { fetchImpl = fetch, timeoutMs = 10_000 } = {}) {
+export async function downloadCover(url, workId, dir, { fetchImpl = fetch, timeoutMs = 10_000 } = {}) {
   let current = String(url || "");
   let res = null;
   for (let hop = 0; hop < 4; hop++) {
@@ -59,6 +59,6 @@ export async function downloadCover(url, workId, coversDir, { fetchImpl = fetch,
   // Open Library devuelve un GIF de 1×1 cuando no tiene portada: no sirve.
   if (ext === "gif" && buf.length < 100) return null;
   const name = `${workId}-${createHash("sha1").update(buf).digest("hex").slice(0, 10)}.${ext}`;
-  writeFileSync(join(coversDir, name), buf);
+  await (dir ? localStore(dir) : storage("covers")).put(name, buf);
   return name;
 }

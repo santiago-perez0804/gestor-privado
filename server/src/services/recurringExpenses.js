@@ -1,5 +1,6 @@
 import { db, nowIso } from "../db/index.js";
 import {
+  periodCfg,
   getBillingMonth,
   billingMonthKey,
   billingMonthAdd,
@@ -12,27 +13,29 @@ import { lastKnownRate } from "../routes/exchangeRate.js";
 
 /**
  * Recorre los períodos pendientes de una plantilla (desde el último generado hasta el actual)
- * y llama a `insert(date)` por cada uno. Con `notAfter`, frena en el primer período cuya fecha
- * todavía no llegó (queda pendiente para la próxima vez). Devuelve la nueva marca de agua.
+ * y devuelve las fechas a generar. Con `notAfter`, frena en el primer período cuya fecha
+ * todavía no llegó (queda pendiente para la próxima vez). También devuelve la nueva marca de agua.
  */
-function generatePending(template, todayBM, insert, notAfter = null) {
+function pendingDates(template, todayBM, cfg, notAfter = null) {
+  const dates = [];
   let cursor = template.lastGeneratedBillingMonthKey
     ? billingMonthAdd(parseBillingMonthKey(template.lastGeneratedBillingMonthKey), 1)
     : todayBM;
   let lastKey = template.lastGeneratedBillingMonthKey;
   while (billingMonthDiff(todayBM, cursor) >= 0) {
-    const date = calendarDateForBillingMonth(cursor, template.dayOfMonth);
+    const date = calendarDateForBillingMonth(cursor, template.dayOfMonth, cfg);
     if (notAfter && date > notAfter) break;
-    insert(date);
+    dates.push(date);
     lastKey = billingMonthKey(cursor);
     cursor = billingMonthAdd(cursor, 1);
   }
-  return lastKey;
+  return { dates, lastKey };
 }
 
-export function generateDueRecurringExpenses() {
-  const todayBM = getBillingMonth(todayDateInputValue());
-  const templates = db.prepare("SELECT * FROM recurring_expenses WHERE active = 1").all();
+export async function generateDueRecurringExpenses() {
+  const cfg = await periodCfg();
+  const todayBM = getBillingMonth(todayDateInputValue(), cfg);
+  const templates = await db.prepare("SELECT * FROM recurring_expenses WHERE active = 1").all();
 
   const insertExpense = db.prepare(`
     INSERT INTO expenses
@@ -47,11 +50,12 @@ export function generateDueRecurringExpenses() {
   for (const t of templates) {
     // Suscripciones en dólares (Netflix, Spotify, ChatGPT…): el banco las cobra a dólar tarjeta.
     // Sin cotización conocida no generamos, para no cargar dólares como si fueran pesos.
-    const rate = t.currency === "USD" ? lastKnownRate("tarjeta") : null;
+    const rate = t.currency === "USD" ? await lastKnownRate("tarjeta") : null;
     if (t.currency === "USD" && !rate) continue;
-    const lastKey = generatePending(t, todayBM, (date) => {
+    const { dates, lastKey } = pendingDates(t, todayBM, cfg);
+    for (const date of dates) {
       const ts = nowIso();
-      insertExpense.run(
+      await insertExpense.run(
         t.title,
         t.description,
         rate ? t.amount * rate : t.amount,
@@ -66,14 +70,15 @@ export function generateDueRecurringExpenses() {
         ts,
         ts
       );
-    });
-    if (lastKey !== t.lastGeneratedBillingMonthKey) updateWatermark.run(lastKey, nowIso(), t.id);
+    }
+    if (lastKey !== t.lastGeneratedBillingMonthKey) await updateWatermark.run(lastKey, nowIso(), t.id);
   }
 }
 
-export function generateDueRecurringIncomes() {
-  const todayBM = getBillingMonth(todayDateInputValue());
-  const templates = db.prepare("SELECT * FROM recurring_incomes WHERE active = 1").all();
+export async function generateDueRecurringIncomes() {
+  const cfg = await periodCfg();
+  const todayBM = getBillingMonth(todayDateInputValue(), cfg);
+  const templates = await db.prepare("SELECT * FROM recurring_incomes WHERE active = 1").all();
   const insertIncome = db.prepare(`
     INSERT INTO incomes (title, amount, currency, originalAmount, exchangeRate, category, date, notes, createdAt, updatedAt)
     VALUES (?, ?, ?, ?, ?, ?, ?, 'Ingreso fijo', ?, ?)
@@ -83,18 +88,14 @@ export function generateDueRecurringIncomes() {
   );
   for (const t of templates) {
     // Ingresos en dólares: se valúan al blue compra (lo que te dan si los vendés).
-    const rate = t.currency === "USD" ? lastKnownRate("blue", "compra") : null;
+    const rate = t.currency === "USD" ? await lastKnownRate("blue", "compra") : null;
     if (t.currency === "USD" && !rate) continue;
     // Un ingreso fijo no se anota antes de cobrarlo: si el día todavía no llegó, queda para después.
-    const lastKey = generatePending(
-      t,
-      todayBM,
-      (date) => {
-        const ts = nowIso();
-        insertIncome.run(t.title, rate ? t.amount * rate : t.amount, t.currency, t.amount, rate, t.category, date, ts, ts);
-      },
-      todayDateInputValue()
-    );
-    if (lastKey !== t.lastGeneratedBillingMonthKey) updateWatermark.run(lastKey, nowIso(), t.id);
+    const { dates, lastKey } = pendingDates(t, todayBM, cfg, todayDateInputValue());
+    for (const date of dates) {
+      const ts = nowIso();
+      await insertIncome.run(t.title, rate ? t.amount * rate : t.amount, t.currency, t.amount, rate, t.category, date, ts, ts);
+    }
+    if (lastKey !== t.lastGeneratedBillingMonthKey) await updateWatermark.run(lastKey, nowIso(), t.id);
   }
 }

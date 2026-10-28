@@ -123,14 +123,14 @@ export function readKoreader(path, { gapMinutes = DEFAULT_GAP_MINUTES } = {}) {
  *   en común, o un único libro con ese título.
  * - null: hay que elegir (se ofrecen candidatos parecidos).
  */
-export function matchBooks(db, books) {
-  const library = db
+export async function matchBooks(db, books) {
+  const library = (await db
     .prepare("SELECT w.id AS workId, w.title, w.originalTitle, w.creators FROM works w JOIN library_entries e ON e.workId = w.id WHERE w.type = 'book'")
-    .all()
+    .all())
     .map((w) => ({ ...w, creators: parseList(w.creators) }));
   const linkOf = db.prepare("SELECT workId FROM koreader_books WHERE key = ?");
-  return books.map((b) => {
-    const linked = linkOf.get(b.key)?.workId;
+  return (await Promise.all(books.map(async (b) => {
+    const linked = (await linkOf.get(b.key))?.workId;
     if (linked && library.some((w) => w.workId === linked)) return { ...b, match: { workId: linked, confidence: "linked" }, candidates: [] };
     const t = norm(b.title);
     const theirs = lastNames(b.authors);
@@ -147,14 +147,14 @@ export function matchBooks(db, books) {
     const exact = scored.filter((x) => x.sameTitle && (x.authorHit || !x.w.creators.length || !theirs.size));
     const match = exact.length === 1 ? { workId: exact[0].w.workId, confidence: "exact" } : null;
     return { ...b, match, candidates: scored.slice(0, 3).map((x) => ({ workId: x.w.workId, title: x.w.title, creators: x.w.creators })) };
-  });
+  })));
 }
 
 /**
  * Importa con el mapeo elegido: { [bookKey]: workId | "new" | "skip" }.
  * "new" crea el libro en la biblioteca (leyendo). Devuelve un resumen.
  */
-export function importKoreader(db, lib, books, mapping) {
+export async function importKoreader(db, lib, books, mapping) {
   const summary = { books: 0, created: 0, skipped: 0, sessionsNew: 0, sessionsUpdated: 0 };
   const upsert = db.prepare(
     `INSERT INTO reading_sessions (workId, startTime, durationSeconds, pagesRead, source, externalKey, createdAt)
@@ -174,11 +174,11 @@ export function importKoreader(db, lib, books, mapping) {
       continue;
     }
     // "Nuevo" pero ya se creó en una importación anterior: se usa ese (no se duplica el libro).
-    const previous = db.prepare("SELECT k.workId FROM koreader_books k JOIN works w ON w.id = k.workId WHERE k.key = ?").get(b.key)?.workId;
+    const previous = (await db.prepare("SELECT k.workId FROM koreader_books k JOIN works w ON w.id = k.workId WHERE k.key = ?").get(b.key))?.workId;
     if (target === "new" && previous) target = previous;
     if (target === "new") {
       const authors = b.authors ? String(b.authors).split(/\n/).map((a) => a.trim()).filter(Boolean) : [];
-      const { item } = lib.add({
+      const { item } = await lib.add({
         work: { type: "book", title: b.title, creators: authors, metadata: b.pages ? { pages: b.pages } : {} },
         entry: { status: "in_progress", format: "Kindle · KOReader" },
         pass: { startedAt: b.firstRead ? localDate(b.firstRead) : undefined },
@@ -187,27 +187,22 @@ export function importKoreader(db, lib, books, mapping) {
       summary.created += 1;
     }
     const workId = Number(target);
-    db.exec("BEGIN");
-    try {
+    await db.tx(async () => {
       for (const s of b.sessions) {
         const key = `koreader:${b.key}:${s.start}`;
-        const before = exists.get(key);
-        upsert.run(workId, new Date(s.start * 1000).toISOString(), s.durationSeconds, s.pagesRead, key, now);
+        const before = await exists.get(key);
+        await upsert.run(workId, new Date(s.start * 1000).toISOString(), s.durationSeconds, s.pagesRead, key, now);
         if (!before) summary.sessionsNew += 1;
         else if (before.durationSeconds !== s.durationSeconds || before.pagesRead !== s.pagesRead || before.workId !== workId) summary.sessionsUpdated += 1;
       }
-      saveLink.run(b.key, b.title, b.authors, b.pages, workId, now);
-      db.exec("COMMIT");
-    } catch (err) {
-      db.exec("ROLLBACK");
-      throw err;
-    }
+      await saveLink.run(b.key, b.title, b.authors, b.pages, workId, now);
+    });
     // La fecha de inicio de la primera lectura: KOReader sabe cuándo empezaste de verdad (la app
     // pone "hoy" por defecto al pasar un libro a Leyendo).
-    const entry = db.prepare("SELECT e.id FROM library_entries e WHERE e.workId = ?").get(workId);
-    const pass = entry && lib.item(entry.id)?.currentPass;
+    const entry = await db.prepare("SELECT e.id FROM library_entries e WHERE e.workId = ?").get(workId);
+    const pass = entry && (await lib.item(entry.id))?.currentPass;
     const firstDay = b.firstRead ? localDate(b.firstRead) : null;
-    if (pass && firstDay && (!pass.startedAt || (pass.number === 1 && firstDay < pass.startedAt))) lib.updatePass(pass.id, { startedAt: firstDay });
+    if (pass && firstDay && (!pass.startedAt || (pass.number === 1 && firstDay < pass.startedAt))) await lib.updatePass(pass.id, { startedAt: firstDay });
     summary.books += 1;
   }
   return summary;

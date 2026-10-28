@@ -80,8 +80,8 @@ export function mapLegacyMuscles(row) {
 
 export function createExercises(db) {
   /** Biblioteca propia: búsqueda por nombre (sin tildes), filtro por músculo y equipo. */
-  function list({ q, muscle, equipment, includeArchived } = {}) {
-    const rows = db.prepare(`SELECT * FROM exercises ${includeArchived ? "" : "WHERE archived = 0"} ORDER BY name COLLATE NOCASE`).all().map(toExercise);
+  async function list({ q, muscle, equipment, includeArchived } = {}) {
+    const rows = (await db.prepare(`SELECT * FROM exercises ${includeArchived ? "" : "WHERE archived = 0"} ORDER BY lower(name), name`).all()).map(toExercise);
     const words = norm(q).split(/\s+/).filter(Boolean);
     return rows.filter(
       (e) =>
@@ -91,8 +91,8 @@ export function createExercises(db) {
     );
   }
 
-  function get(id) {
-    const e = toExercise(db.prepare("SELECT * FROM exercises WHERE id = ?").get(Number(id)));
+  async function get(id) {
+    const e = toExercise(await db.prepare("SELECT * FROM exercises WHERE id = ?").get(Number(id)));
     if (!e) throw notFound();
     return e;
   }
@@ -114,23 +114,23 @@ export function createExercises(db) {
     };
   }
 
-  const nameTaken = (name, exceptId = 0) => !!db.prepare("SELECT 1 FROM exercises WHERE name = ? COLLATE NOCASE AND id != ?").get(name, exceptId);
+  const nameTaken = async (name, exceptId = 0) => !!await db.prepare("SELECT 1 FROM exercises WHERE lower(name) = lower(?) AND id != ?").get(name, exceptId);
 
-  function create(input, { sourceLibraryId = null } = {}) {
+  async function create(input, { sourceLibraryId = null } = {}) {
     const e = clean(input);
-    if (nameTaken(e.name)) throw conflict("name_taken");
+    if (await nameTaken(e.name)) throw conflict("name_taken");
     const ts = nowIso();
-    const id = db
+    const id = (await db
       .prepare("INSERT INTO exercises (name, equipment, bar, isBodyweight, muscles, notes, isCustom, sourceLibraryId, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)")
-      .run(e.name, e.equipment, e.bar, e.isBodyweight, e.muscles, e.notes, sourceLibraryId, ts, ts).lastInsertRowid;
-    return get(id);
+      .run(e.name, e.equipment, e.bar, e.isBodyweight, e.muscles, e.notes, sourceLibraryId, ts, ts)).lastInsertRowid;
+    return await get(id);
   }
 
-  function update(id, input) {
-    const current = get(id);
+  async function update(id, input) {
+    const current = await get(id);
     const e = clean(input, current);
-    if (nameTaken(e.name, current.id)) throw conflict("name_taken");
-    db.prepare("UPDATE exercises SET name = ?, equipment = ?, bar = ?, isBodyweight = ?, muscles = ?, notes = ?, archived = ?, updatedAt = ? WHERE id = ?").run(
+    if (await nameTaken(e.name, current.id)) throw conflict("name_taken");
+    await db.prepare("UPDATE exercises SET name = ?, equipment = ?, bar = ?, isBodyweight = ?, muscles = ?, notes = ?, archived = ?, updatedAt = ? WHERE id = ?").run(
       e.name,
       e.equipment,
       e.bar,
@@ -141,35 +141,35 @@ export function createExercises(db) {
       nowIso(),
       current.id
     );
-    return get(current.id);
+    return await get(current.id);
   }
 
   /** Borrar: si se usó en una rutina o en un entreno, se archiva (no desaparece del historial). */
-  function remove(id) {
-    const e = get(id);
-    const used = db.prepare("SELECT 1 FROM routine_exercises WHERE exerciseId = ? UNION SELECT 1 FROM set_logs WHERE exerciseId = ? LIMIT 1").get(e.id, e.id);
-    if (used) db.prepare("UPDATE exercises SET archived = 1, updatedAt = ? WHERE id = ?").run(nowIso(), e.id);
-    else db.prepare("DELETE FROM exercises WHERE id = ?").run(e.id);
+  async function remove(id) {
+    const e = await get(id);
+    const used = await db.prepare("SELECT 1 FROM routine_exercises WHERE exerciseId = ? UNION SELECT 1 FROM set_logs WHERE exerciseId = ? LIMIT 1").get(e.id, e.id);
+    if (used) await db.prepare("UPDATE exercises SET archived = 1, updatedAt = ? WHERE id = ?").run(nowIso(), e.id);
+    else await db.prepare("DELETE FROM exercises WHERE id = ?").run(e.id);
     return { archived: !!used };
   }
 
   /** Otros ejercicios que trabajan el mismo músculo primario (para "cambiar ejercicio"). */
-  function alternatives(id, limit = 8) {
-    const e = get(id);
+  async function alternatives(id, limit = 8) {
+    const e = await get(id);
     const primary = e.muscles.filter((m) => m.role === "primary").map((m) => m.muscle);
-    return list()
+    return (await list())
       .filter((x) => x.id !== e.id && x.muscles.some((m) => m.role === "primary" && primary.includes(m.muscle)))
       .sort((a, b) => Number(b.equipment === e.equipment) - Number(a.equipment === e.equipment))
       .slice(0, limit);
   }
 
   /** Búsqueda en la biblioteca grande (inglés), con los músculos ya traducidos a los nuestros. */
-  function searchLegacy({ q, muscle, limit = 30 } = {}) {
+  async function searchLegacy({ q, muscle, limit = 30 } = {}) {
     const words = norm(q).split(/\s+/).filter(Boolean);
     if (!words.length && !muscle) return [];
-    const imported = new Set(db.prepare("SELECT sourceLibraryId FROM exercises WHERE sourceLibraryId IS NOT NULL").all().map((r) => r.sourceLibraryId));
+    const imported = new Set((await db.prepare("SELECT sourceLibraryId FROM exercises WHERE sourceLibraryId IS NOT NULL").all()).map((r) => r.sourceLibraryId));
     const out = [];
-    for (const r of db.prepare("SELECT id, name, equipment, primaryMuscles, secondaryMuscles, category FROM exercise_library ORDER BY name").iterate()) {
+    for (const r of await db.prepare("SELECT id, name, equipment, primaryMuscles, secondaryMuscles, category FROM exercise_library ORDER BY name").all()) {
       if (words.length && !words.every((w) => norm(r.name).includes(w))) continue;
       if (r.category && ["stretching", "cardio"].includes(r.category)) continue;
       const muscles = mapLegacyMuscles(r);
@@ -181,13 +181,13 @@ export function createExercises(db) {
   }
 
   /** Importa uno de la biblioteca grande como ejercicio propio (con nombre editable). */
-  function importLegacy(libraryId, { name } = {}) {
-    const existing = db.prepare("SELECT id FROM exercises WHERE sourceLibraryId = ?").get(libraryId);
-    if (existing) return get(existing.id);
-    const r = db.prepare("SELECT * FROM exercise_library WHERE id = ?").get(libraryId);
+  async function importLegacy(libraryId, { name } = {}) {
+    const existing = await db.prepare("SELECT id FROM exercises WHERE sourceLibraryId = ?").get(libraryId);
+    if (existing) return await get(existing.id);
+    const r = await db.prepare("SELECT * FROM exercise_library WHERE id = ?").get(libraryId);
     if (!r) throw notFound();
     const equipment = LEGACY_EQUIPMENT[r.equipment] ?? "otro";
-    return create(
+    return await create(
       {
         name: (name || r.name).trim(),
         equipment,

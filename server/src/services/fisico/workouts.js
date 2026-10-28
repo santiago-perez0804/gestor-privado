@@ -19,69 +19,70 @@ const numOrNull = (v, min, max, field) => {
 };
 
 export function createWorkouts(db, { history, plans, body }) {
-  const exerciseRow = (id) => toExercise(db.prepare("SELECT * FROM exercises WHERE id = ?").get(Number(id)));
+  const exerciseRow = async (id) => toExercise(await db.prepare("SELECT * FROM exercises WHERE id = ?").get(Number(id)));
 
   /** Datos de un ejercicio para el entreno: anterior, sugerencia y récords. */
-  function exerciseData(exerciseId, prescription = null) {
-    const exercise = exerciseRow(exerciseId);
+  async function exerciseData(exerciseId, prescription = null) {
+    const exercise = await exerciseRow(exerciseId);
     if (!exercise) throw bad("unknown_exercise");
-    const settings = getSettings(db);
+    const settings = await getSettings(db);
     const p = prescription ?? { sets: 3, repMin: exercise.isBodyweight ? 6 : 8, repMax: exercise.isBodyweight ? 10 : 12, restSeconds: exercise.equipment === "barra" ? 150 : 90, rirMin: null, rirMax: null };
     return {
       exerciseId: exercise.id,
       exercise,
       prescription: p,
-      previous: history.last(exercise.id),
-      suggestion: history.suggestion({ exerciseId: exercise.id, sets: p.sets, repMin: p.repMin, repMax: p.repMax }, exercise, settings),
-      records: history.records(exercise.id, { isBodyweight: exercise.isBodyweight }),
+      previous: await history.last(exercise.id),
+      suggestion: await history.suggestion({ exerciseId: exercise.id, sets: p.sets, repMin: p.repMin, repMax: p.repMax }, exercise, settings),
+      records: await history.records(exercise.id, { isBodyweight: exercise.isBodyweight }),
     };
   }
 
   /** Todo lo que el celular necesita para empezar (y seguir sin conexión). Sin rutina = entreno libre. */
-  function startData({ routineId } = {}) {
-    const settings = getSettings(db);
+  async function startData({ routineId } = {}) {
+    const settings = await getSettings(db);
     let routine = null;
     if (routineId) {
-      routine = db.prepare("SELECT id, planId, name FROM routines WHERE id = ?").get(Number(routineId));
+      routine = await db.prepare("SELECT id, planId, name FROM routines WHERE id = ?").get(Number(routineId));
       if (!routine) throw notFound("routine_not_found");
     }
-    const items = routine ? db.prepare("SELECT * FROM routine_exercises WHERE routineId = ? ORDER BY sortOrder, id").all(routine.id) : [];
+    const items = routine ? await db.prepare("SELECT * FROM routine_exercises WHERE routineId = ? ORDER BY sortOrder, id").all(routine.id) : [];
     return {
-      session: { routineId: routine?.id ?? null, planId: routine?.planId ?? plans.activeId(), title: routine?.name ?? "Entreno libre", bodyweightKg: body.trendOn() },
-      priorityMuscles: (() => {
-        const pid = routine?.planId ?? plans.activeId();
-        return pid ? plans.detail(pid).priorityMuscles : [];
+      session: { routineId: routine?.id ?? null, planId: routine?.planId ?? await plans.activeId(), title: routine?.name ?? "Entreno libre", bodyweightKg: await body.trendOn() },
+      priorityMuscles: await (async () => {
+        const pid = routine?.planId ?? await plans.activeId();
+        return pid ? (await plans.detail(pid)).priorityMuscles : [];
       })(),
-      exercises: items.map((it) =>
-        exerciseData(it.exerciseId, { sets: it.sets, repMin: it.repMin, repMax: it.repMax, restSeconds: it.restSeconds, rirMin: it.rirMin, rirMax: it.rirMax, supersetGroup: it.supersetGroup, notes: it.notes })
-      ),
+      exercises: (await Promise.all(items.map(async (it) =>
+        await exerciseData(it.exerciseId, { sets: it.sets, repMin: it.repMin, repMax: it.repMax, restSeconds: it.restSeconds, rirMin: it.rirMin, rirMax: it.rirMax, supersetGroup: it.supersetGroup, notes: it.notes })
+      ))),
       settings: { warmupRestSeconds: settings.warmupRestSeconds, bars: settings.bars, plates: settings.plates, progressionStepKg: settings.progressionStepKg, timeZone: settings.timeZone },
     };
   }
 
   /** Sesiones terminadas de una semana (para la agenda). */
-  const doneBetween = (from, to) => db.prepare("SELECT id, localDate, routineId FROM workout_sessions WHERE status = 'done' AND localDate BETWEEN ? AND ? ORDER BY startedAt").all(from, to);
+  const doneBetween = async (from, to) => await db.prepare("SELECT id, localDate, routineId FROM workout_sessions WHERE status = 'done' AND localDate BETWEEN ? AND ? ORDER BY startedAt").all(from, to);
 
   /** La semana del plan activo (estados, reprogramación) y qué entreno toca. */
-  function week(day = today(db)) {
-    const id = plans.activeId();
+  async function week(day) {
+    day ??= await today(db);
+    const id = await plans.activeId();
     if (!id) return null;
-    const schedule = Object.fromEntries(plans.schedule(id).map((d) => [d.weekday, d]));
+    const schedule = Object.fromEntries((await plans.schedule(id)).map((d) => [d.weekday, d]));
     const days = weekDays(day);
-    const plan = weekPlan({ days, schedule, sessions: doneBetween(days[0], days[6]), today: day });
+    const plan = weekPlan({ days, schedule, sessions: await doneBetween(days[0], days[6]), today: day });
     return { planId: id, ...plan, next: nextWorkout(plan) };
   }
 
   /** Para "Empezar entreno": la rutina que toca hoy, las demás y si hay uno en curso. */
-  function todayInfo() {
-    const id = plans.activeId();
+  async function todayInfo() {
+    const id = await plans.activeId();
     const routines = id
-      ? db
+      ? await db
           .prepare("SELECT r.id, r.name, (SELECT COUNT(*) FROM routine_exercises x WHERE x.routineId = r.id) AS exerciseCount FROM routines r WHERE r.planId = ? ORDER BY r.sortOrder, r.id")
           .all(id)
       : [];
-    const w = week();
-    const t = today(db);
+    const w = await week();
+    const t = await today(db);
     const todayDay = w?.days.find((d) => d.date === t);
     return {
       planId: id,
@@ -89,19 +90,19 @@ export function createWorkouts(db, { history, plans, body }) {
       suggestedRoutineId: todayDay?.status === "today" ? todayDay.routineId : null,
       next: w?.next ?? null,
       doneToday: !!todayDay?.doneRoutineIds?.length,
-      inProgress: inProgressSummary(),
+      inProgress: await inProgressSummary(),
     };
   }
 
   // ---------- guardar (snapshot idempotente) ----------
-  function cleanSnapshot(id, snap) {
+  async function cleanSnapshot(id, snap) {
     if (!ID.test(id)) throw bad("invalid_id");
     if (!SESSION_STATUSES.includes(snap.status)) throw bad("invalid_status");
     if (!isIso(snap.startedAt)) throw bad("invalid_startedAt");
     if (snap.endedAt != null && !isIso(snap.endedAt)) throw bad("invalid_endedAt");
     if (!isIso(snap.updatedAt)) throw bad("invalid_updatedAt");
     if (!Array.isArray(snap.sets) || snap.sets.length > 400) throw bad("invalid_sets");
-    const known = new Set(db.prepare("SELECT id FROM exercises").all().map((r) => r.id));
+    const known = new Set((await db.prepare("SELECT id FROM exercises").all()).map((r) => r.id));
     const sets = snap.sets.map((s) => {
       if (!ID.test(String(s.id))) throw bad("invalid_set_id");
       if (!known.has(Number(s.exerciseId))) throw bad("unknown_exercise");
@@ -120,8 +121,8 @@ export function createWorkouts(db, { history, plans, body }) {
         completedAt: s.completedAt ?? null,
       };
     });
-    const routineId = snap.routineId && db.prepare("SELECT id FROM routines WHERE id = ?").get(Number(snap.routineId)) ? Number(snap.routineId) : null;
-    const planId = snap.planId && db.prepare("SELECT id FROM plans WHERE id = ?").get(Number(snap.planId)) ? Number(snap.planId) : null;
+    const routineId = snap.routineId && await db.prepare("SELECT id FROM routines WHERE id = ?").get(Number(snap.routineId)) ? Number(snap.routineId) : null;
+    const planId = snap.planId && await db.prepare("SELECT id FROM plans WHERE id = ?").get(Number(snap.planId)) ? Number(snap.planId) : null;
     const bw = numOrNull(snap.bodyweightKg, 20, 400, "bodyweightKg");
     return { routineId, planId, title: String(snap.title || "Entreno").slice(0, 120), status: snap.status, startedAt: snap.startedAt, endedAt: snap.endedAt ?? null, bodyweightKg: bw, notes: snap.notes ? String(snap.notes).slice(0, 2000) : null, updatedAt: snap.updatedAt, sets };
   }
@@ -130,22 +131,21 @@ export function createWorkouts(db, { history, plans, body }) {
    * Guarda el estado completo de un entreno. Idempotente: mandar lo mismo dos veces no cambia nada, y
    * si llega una versión más vieja que la guardada (reintento atrasado), se ignora.
    */
-  function upsert(id, snap) {
-    const s = cleanSnapshot(id, snap || {});
-    const existing = db.prepare("SELECT updatedAt FROM workout_sessions WHERE id = ?").get(id);
-    if (existing && existing.updatedAt > s.updatedAt) return { stale: true, session: get(id) };
-    const day = localDate(new Date(s.startedAt), getSettings(db).timeZone);
+  async function upsert(id, snap) {
+    const s = await cleanSnapshot(id, snap || {});
+    const existing = await db.prepare("SELECT updatedAt FROM workout_sessions WHERE id = ?").get(id);
+    if (existing && existing.updatedAt > s.updatedAt) return { stale: true, session: await get(id) };
+    const day = localDate(new Date(s.startedAt), (await getSettings(db)).timeZone);
     const ts = nowIso();
-    db.exec("BEGIN");
-    try {
-      db.prepare(
+    await db.tx(async () => {
+      await db.prepare(
         `INSERT INTO workout_sessions (id, planId, routineId, title, startedAt, endedAt, status, localDate, bodyweightKg, notes, createdAt, updatedAt)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET planId = excluded.planId, routineId = excluded.routineId, title = excluded.title, startedAt = excluded.startedAt,
            endedAt = excluded.endedAt, status = excluded.status, localDate = excluded.localDate, bodyweightKg = excluded.bodyweightKg, notes = excluded.notes, updatedAt = excluded.updatedAt`
       ).run(id, s.planId, s.routineId, s.title, s.startedAt, s.endedAt, s.status, day, s.bodyweightKg, s.notes, ts, s.updatedAt);
       const keep = new Set(s.sets.map((x) => x.id));
-      for (const old of db.prepare("SELECT id FROM set_logs WHERE sessionId = ?").all(id)) if (!keep.has(old.id)) db.prepare("DELETE FROM set_logs WHERE id = ?").run(old.id);
+      for (const old of await db.prepare("SELECT id FROM set_logs WHERE sessionId = ?").all(id)) if (!keep.has(old.id)) await db.prepare("DELETE FROM set_logs WHERE id = ?").run(old.id);
       const up = db.prepare(
         `INSERT INTO set_logs (id, sessionId, exerciseId, exerciseOrder, setOrder, type, weightKg, reps, rir, completedAt, updatedAt)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -153,32 +153,28 @@ export function createWorkouts(db, { history, plans, body }) {
            weightKg = excluded.weightKg, reps = excluded.reps, rir = excluded.rir, completedAt = excluded.completedAt, updatedAt = excluded.updatedAt
          WHERE set_logs.sessionId = excluded.sessionId`
       );
-      for (const x of s.sets) up.run(x.id, id, x.exerciseId, x.exerciseOrder, x.setOrder, x.type, x.weightKg, x.reps, x.rir, x.completedAt, s.updatedAt);
-      db.exec("COMMIT");
-    } catch (e) {
-      db.exec("ROLLBACK");
-      throw e;
-    }
-    return { stale: false, session: get(id) };
+      for (const x of s.sets) await up.run(x.id, id, x.exerciseId, x.exerciseOrder, x.setOrder, x.type, x.weightKg, x.reps, x.rir, x.completedAt, s.updatedAt);
+    });
+    return { stale: false, session: await get(id) };
   }
 
-  function get(id) {
-    const s = db.prepare("SELECT * FROM workout_sessions WHERE id = ?").get(String(id));
+  async function get(id) {
+    const s = await db.prepare("SELECT * FROM workout_sessions WHERE id = ?").get(String(id));
     if (!s) throw notFound();
-    const sets = db.prepare("SELECT * FROM set_logs WHERE sessionId = ? ORDER BY exerciseOrder, setOrder").all(s.id);
+    const sets = await db.prepare("SELECT * FROM set_logs WHERE sessionId = ? ORDER BY exerciseOrder, setOrder").all(s.id);
     return { ...s, sets };
   }
 
-  function inProgressSummary() {
-    const s = db.prepare("SELECT id, title, startedAt, updatedAt, routineId FROM workout_sessions WHERE status = 'in_progress' ORDER BY updatedAt DESC LIMIT 1").get();
+  async function inProgressSummary() {
+    const s = await db.prepare("SELECT id, title, startedAt, updatedAt, routineId FROM workout_sessions WHERE status = 'in_progress' ORDER BY updatedAt DESC LIMIT 1").get();
     if (!s) return null;
-    const c = db.prepare("SELECT COUNT(*) AS total, SUM(CASE WHEN completedAt IS NOT NULL THEN 1 ELSE 0 END) AS done FROM set_logs WHERE sessionId = ? AND type != 'warmup'").get(s.id);
+    const c = await db.prepare("SELECT COUNT(*) AS total, SUM(CASE WHEN completedAt IS NOT NULL THEN 1 ELSE 0 END) AS done FROM set_logs WHERE sessionId = ? AND type != 'warmup'").get(s.id);
     return { ...s, setsDone: c.done || 0, setsTotal: c.total || 0 };
   }
 
   /** Entrenos de un rango (historial). */
-  function list({ from, to } = {}) {
-    return db
+  async function list({ from, to } = {}) {
+    return await db
       .prepare(
         `SELECT s.id, s.title, s.localDate, s.startedAt, s.endedAt, s.status, s.routineId,
            (SELECT COUNT(*) FROM set_logs l WHERE l.sessionId = s.id AND l.type = 'working' AND l.completedAt IS NOT NULL) AS workingSets
@@ -188,9 +184,9 @@ export function createWorkouts(db, { history, plans, body }) {
   }
 
   /** Resumen al terminar: duración, series, volumen, por músculo, récords y comparación con la vez anterior. */
-  function summary(id) {
-    const s = get(id);
-    const exercises = new Map(db.prepare("SELECT * FROM exercises").all().map((r) => [r.id, toExercise(r)]));
+  async function summary(id) {
+    const s = await get(id);
+    const exercises = new Map((await db.prepare("SELECT * FROM exercises").all()).map((r) => [r.id, toExercise(r)]));
     const working = s.sets.filter((x) => x.type === "working" && x.completedAt && x.reps > 0);
     const volumeKg = Math.round(working.reduce((acc, x) => acc + (x.weightKg || 0) * x.reps, 0));
     const durationMin = s.endedAt ? Math.round((Date.parse(s.endedAt) - Date.parse(s.startedAt)) / 60000) : null;
@@ -199,7 +195,7 @@ export function createWorkouts(db, { history, plans, body }) {
     const records = [];
     for (const [exerciseId, sets] of groupBy(working, (x) => x.exerciseId)) {
       const ex = exercises.get(exerciseId);
-      const before = history.records(exerciseId, { isBodyweight: ex?.isBodyweight, exceptSessionId: s.id });
+      const before = await history.records(exerciseId, { isBodyweight: ex?.isBodyweight, exceptSessionId: s.id });
       const seen = [];
       for (const x of sets) {
         const base = mergeRecords(before, exerciseRecords(seen, { isBodyweight: ex?.isBodyweight }));
@@ -212,10 +208,10 @@ export function createWorkouts(db, { history, plans, body }) {
     // Comparación con la última vez que hiciste esta rutina.
     let comparison = null;
     const prev = s.routineId
-      ? db.prepare("SELECT id FROM workout_sessions WHERE routineId = ? AND status = 'done' AND id != ? AND startedAt < ? ORDER BY startedAt DESC LIMIT 1").get(s.routineId, s.id, s.startedAt)
+      ? await db.prepare("SELECT id FROM workout_sessions WHERE routineId = ? AND status = 'done' AND id != ? AND startedAt < ? ORDER BY startedAt DESC LIMIT 1").get(s.routineId, s.id, s.startedAt)
       : null;
     if (prev) {
-      const p = get(prev.id);
+      const p = await get(prev.id);
       const pw = p.sets.filter((x) => x.type === "working" && x.completedAt && x.reps > 0);
       const best = (sets, exerciseId, ex, bodyweightKg) => Math.max(...sets.filter((x) => x.exerciseId === exerciseId).map((x) => setE1rm(x, { isBodyweight: ex?.isBodyweight, bodyweightKg })?.value ?? -Infinity));
       comparison = {

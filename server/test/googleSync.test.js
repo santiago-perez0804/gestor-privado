@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { testDb } from "./helpers/pgdb.js";
 import { DatabaseSync } from "node:sqlite";
 import { gastosSchema } from "../src/db/schema/gastos.js";
 import { ocioSchema } from "../src/db/schema/ocio.js";
@@ -86,23 +87,19 @@ function fakeCalendar() {
   };
 }
 
-function setup() {
-  const db = new DatabaseSync(":memory:");
-  db.exec("PRAGMA foreign_keys = ON");
-  db.exec(gastosSchema);
-  db.exec(ocioSchema);
-  migrateOcioV2(db);
-  saveAccount(db, { calendarId: "salidas@group.calendar.google.com", refreshTokenEnc: "x", status: "connected" });
+async function setup() {
+  const db = await testDb();
+  await saveAccount(db, { calendarId: "salidas@group.calendar.google.com", refreshTokenEnc: "x", status: "connected" });
   const cal = fakeCalendar();
   const sync = createCalendarSync(db, cal);
-  const addLocal = (fields, updatedAt = "2026-10-02T10:00:00.000Z") =>
-    db
+  const addLocal = async (fields, updatedAt = "2026-10-02T10:00:00.000Z") =>
+    (await db
       .prepare("INSERT INTO outings (title, date, startTime, allDay, place, withWhom, category, status, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-      .run(fields.title, fields.date, fields.startTime ?? null, fields.startTime ? 0 : 1, fields.place ?? null, fields.withWhom ?? null, fields.category ?? null, fields.status ?? "confirmed", updatedAt, updatedAt).lastInsertRowid;
-  const get = (id) => db.prepare("SELECT * FROM outings WHERE id = ?").get(id);
-  const editLocal = (id, fields, updatedAt) => {
+      .run(fields.title, fields.date, fields.startTime ?? null, fields.startTime ? 0 : 1, fields.place ?? null, fields.withWhom ?? null, fields.category ?? null, fields.status ?? "confirmed", updatedAt, updatedAt)).lastInsertRowid;
+  const get = async (id) => await db.prepare("SELECT * FROM outings WHERE id = ?").get(id);
+  const editLocal = async (id, fields, updatedAt) => {
     const sets = Object.keys(fields).map((k) => `${k} = ?`);
-    db.prepare(`UPDATE outings SET ${sets.join(", ")}, updatedAt = ? WHERE id = ?`).run(...Object.values(fields), updatedAt, id);
+    await db.prepare(`UPDATE outings SET ${sets.join(", ")}, updatedAt = ? WHERE id = ?`).run(...Object.values(fields), updatedAt, id);
   };
   return { db, cal, sync, addLocal, get, editLocal };
 }
@@ -126,37 +123,37 @@ test("mapeo: día completo, con horario (2 h por defecto) y zona horaria de Buen
 });
 
 test("App → Google: alta, sin cambios no vuelve a subir, edición y baja", async () => {
-  const { db, cal, sync, addLocal, get, editLocal } = setup();
-  const id = addLocal({ title: "Recital", date: "2026-11-14", startTime: "21:00", place: "Quality", category: "musica" });
+  const { db, cal, sync, addLocal, get, editLocal } = await setup();
+  const id = await addLocal({ title: "Recital", date: "2026-11-14", startTime: "21:00", place: "Quality", category: "musica" });
   const s1 = await sync.syncNow();
   assert.equal(s1.pushedNew, 1);
-  const local = get(id);
+  const local = await get(id);
   assert.ok(local.googleEventId);
   assert.equal(cal.events.get(local.googleEventId).location, "Quality");
 
   const s2 = await sync.syncNow();
   assert.deepEqual([s2.pushedNew, s2.pushedUpdated, s2.pulledUpdated, s2.pulledNew], [0, 0, 0, 0], "el eco de lo que subimos se ignora");
 
-  editLocal(id, { title: "Recital de Babasónicos" }, "2026-10-05T10:00:00.000Z");
+  await editLocal(id, { title: "Recital de Babasónicos" }, "2026-10-05T10:00:00.000Z");
   const s3 = await sync.syncNow();
   assert.equal(s3.pushedUpdated, 1);
   assert.equal(cal.events.get(local.googleEventId).summary, "Recital de Babasónicos");
 
-  editLocal(id, { deletedAt: "2026-10-06T10:00:00.000Z" }, "2026-10-06T10:00:00.000Z");
+  await editLocal(id, { deletedAt: "2026-10-06T10:00:00.000Z" }, "2026-10-06T10:00:00.000Z");
   const s4 = await sync.syncNow();
   assert.equal(s4.pushedDeleted, 1);
-  assert.equal(get(id), undefined);
+  assert.equal(await get(id), undefined);
   assert.equal(cal.events.get(local.googleEventId).status, "cancelled");
-  assert.ok(getAccount(db).lastSyncAt);
+  assert.ok((await getAccount(db)).lastSyncAt);
 });
 
 test("Google → App: altas, cambios y bajas hechas en el calendario (con paginación)", async () => {
-  const { db, cal, sync } = setup();
+  const { db, cal, sync } = await setup();
   for (let i = 1; i <= 3; i++) cal.remoteCreate({ summary: `Partido ${i}`, start: { date: `2026-11-0${i}` }, end: { date: `2026-11-0${i + 1}` } });
   const fede = cal.remoteCreate({ summary: "Cumple de Fede", start: { dateTime: "2026-11-07T21:00:00-03:00" }, end: { dateTime: "2026-11-07T23:30:00-03:00" }, status: "tentative" });
   const s1 = await sync.syncNow();
   assert.equal(s1.pulledNew, 4);
-  const row = db.prepare("SELECT * FROM outings WHERE googleEventId = ?").get(fede.id);
+  const row = await db.prepare("SELECT * FROM outings WHERE googleEventId = ?").get(fede.id);
   assert.equal(row.source, "google");
   assert.equal(row.status, "tentative");
   assert.equal(row.startTime, "21:00");
@@ -165,7 +162,7 @@ test("Google → App: altas, cambios y bajas hechas en el calendario (con pagina
   cal.remoteEdit(fede.id, { status: "confirmed", location: "Lo de Fede" });
   const s2 = await sync.syncNow();
   assert.equal(s2.pulledUpdated, 1);
-  const updated = db.prepare("SELECT * FROM outings WHERE googleEventId = ?").get(fede.id);
+  const updated = await db.prepare("SELECT * FROM outings WHERE googleEventId = ?").get(fede.id);
   assert.equal(updated.status, "confirmed");
   assert.equal(updated.place, "Lo de Fede");
   assert.equal(s2.pushedUpdated, 0, "lo bajado no se vuelve a subir");
@@ -173,57 +170,57 @@ test("Google → App: altas, cambios y bajas hechas en el calendario (con pagina
   cal.remoteDelete(fede.id);
   const s3 = await sync.syncNow();
   assert.equal(s3.pulledDeleted, 1);
-  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM outings").get().n, 3);
+  assert.equal((await db.prepare("SELECT COUNT(*) AS n FROM outings").get()).n, 3);
 });
 
 test("conflicto: gana el cambio más reciente y queda registrado", async () => {
-  const { db, cal, sync, addLocal, get, editLocal } = setup();
-  const id = addLocal({ title: "Asado", date: "2026-11-01" });
+  const { db, cal, sync, addLocal, get, editLocal } = await setup();
+  const id = await addLocal({ title: "Asado", date: "2026-11-01" });
   await sync.syncNow();
-  const gid = get(id).googleEventId;
+  const gid = (await get(id)).googleEventId;
 
   // Google cambia antes; la app cambia después → gana la app.
   cal.remoteEdit(gid, { summary: "Asado (Google)" }, "2026-10-10T10:00:00.000Z");
-  editLocal(id, { title: "Asado (app)" }, "2026-10-20T10:00:00.000Z");
+  await editLocal(id, { title: "Asado (app)" }, "2026-10-20T10:00:00.000Z");
   const s1 = await sync.syncNow();
   assert.equal(s1.conflicts, 1);
   assert.equal(cal.events.get(gid).summary, "Asado (app)");
-  assert.equal(get(id).title, "Asado (app)");
+  assert.equal((await get(id)).title, "Asado (app)");
 
   // La app cambia antes; Google cambia después → gana Google.
-  editLocal(id, { title: "Asado (app 2)" }, "2026-10-21T10:00:00.000Z");
+  await editLocal(id, { title: "Asado (app 2)" }, "2026-10-21T10:00:00.000Z");
   cal.remoteEdit(gid, { summary: "Asado (Google 2)" }, "2026-10-25T10:00:00.000Z");
   const s2 = await sync.syncNow();
   assert.equal(s2.conflicts, 1);
-  assert.equal(get(id).title, "Asado (Google 2)");
-  const log = db.prepare("SELECT kind, message FROM google_sync_log WHERE kind = 'conflict' ORDER BY id").all();
+  assert.equal((await get(id)).title, "Asado (Google 2)");
+  const log = await db.prepare("SELECT kind, message FROM google_sync_log WHERE kind = 'conflict' ORDER BY id").all();
   assert.equal(log.length, 2);
   assert.match(log[0].message, /versión de la app/);
   assert.match(log[1].message, /versión de Google/);
 });
 
 test("si Google invalida el syncToken (410) hace una sync completa", async () => {
-  const { db, cal, sync } = setup();
+  const { db, cal, sync } = await setup();
   cal.remoteCreate({ summary: "Uno", start: { date: "2026-11-01" }, end: { date: "2026-11-02" } });
   await sync.syncNow();
   cal.remoteCreate({ summary: "Dos", start: { date: "2026-11-02" }, end: { date: "2026-11-03" } });
   cal.expireTokens = true;
   const s = await sync.syncNow();
   assert.equal(s.fullResync, true);
-  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM outings").get().n, 2, "no duplica lo que ya tenía");
-  assert.match(db.prepare("SELECT message FROM google_sync_log WHERE kind = 'info'").get().message, /completa/);
+  assert.equal((await db.prepare("SELECT COUNT(*) AS n FROM outings").get()).n, 2, "no duplica lo que ya tenía");
+  assert.match((await db.prepare("SELECT message FROM google_sync_log WHERE kind = 'info'").get()).message, /completa/);
 });
 
 test("un error de Google queda en la cuenta y en el log (y 'revocado' pide reconectar)", async () => {
-  const { db, sync, addLocal } = setup();
-  addLocal({ title: "x", date: "2026-11-01" });
+  const { db, sync, addLocal } = await setup();
+  await addLocal({ title: "x", date: "2026-11-01" });
   const broken = createCalendarSync(db, {
     insertEvent: async () => {
       throw Object.assign(new Error("Token has been expired or revoked."), { status: 400, code: "invalid_grant" });
     },
   });
   await assert.rejects(broken.syncNow());
-  assert.equal(getAccount(db).status, "revoked");
-  assert.match(getAccount(db).lastError, /revoked/);
+  assert.equal((await getAccount(db)).status, "revoked");
+  assert.match((await getAccount(db)).lastError, /revoked/);
   void sync;
 });

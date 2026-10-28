@@ -1,5 +1,5 @@
 // API de la biblioteca de Ocio (obras, entradas, pasadas, reseñas, subrayados, metas) e Inicio.
-import { db, coversDir } from "../db/index.js";
+import { db } from "../db/index.js";
 import { downloadCover } from "../services/catalog/covers.js";
 import { createLibrary, todayLocal } from "../services/ocio/library.js";
 import { buildHome, sidebarCounts } from "../services/ocio/home.js";
@@ -15,23 +15,23 @@ export default function registerOcioRoutes(app) {
   const yearOf = (req) => parseInt(req.query.year, 10) || Number(todayLocal().slice(0, 4));
 
   /** Baja la portada remota a data/covers en segundo plano (si falla, queda la URL del catálogo). */
-  function cacheCover(item) {
+  async function cacheCover(item) {
     if (!item?.cover || item.cover.startsWith("/covers/")) return;
-    downloadCover(item.cover, item.workId, coversDir)
-      .then((name) => name && lib.updateWork(item.workId, { coverPath: name }))
+    downloadCover(item.cover, item.workId)
+      .then(async (name) => name && await lib.updateWork(item.workId, { coverPath: name }))
       .catch((err) => console.warn(`[ocio] no se pudo bajar la portada de "${item.title}": ${err.message}`));
   }
 
   app.get("/api/ocio/genres", handle(() => GENRES));
 
-  app.get("/api/ocio/counts", handle(() => sidebarCounts(db, todayLocal())));
+  app.get("/api/ocio/counts", handle(async () => await sidebarCounts(db, todayLocal())));
 
   app.get(
     "/api/ocio/home",
-    handle((req) => {
+    handle(async (req) => {
       const today = todayLocal();
       const year = parseInt(req.query.year, 10) || Number(today.slice(0, 4));
-      return buildHome(db, lib, { year, today });
+      return await buildHome(db, lib, { year, today });
     })
   );
 
@@ -40,23 +40,23 @@ export default function registerOcioRoutes(app) {
   // Resumen anual ("Wrapped"): todo de una vez.
   app.get("/api/ocio/wrapped", handle((req) => ocioStats.wrapped(yearOf(req))));
 
-  app.get("/api/ocio/library", handle((req) => lib.list(req.query)));
+  app.get("/api/ocio/library", handle(async (req) => await lib.list(req.query)));
 
   // ¿Ya está? Lo usa la pantalla "Agregar" para marcar resultados del catálogo.
   app.get(
     "/api/ocio/library/duplicate",
-    handle((req) => {
+    handle(async (req) => {
       const { type, title, originalTitle, creators, year, externalSource, externalId } = req.query;
       return {
-        item: lib.findDuplicate({ type, title, originalTitle, creators: creators ? String(creators).split("|") : [], year: year ? Number(year) : null, externalSource, externalId }),
+        item: await lib.findDuplicate({ type, title, originalTitle, creators: creators ? String(creators).split("|") : [], year: year ? Number(year) : null, externalSource, externalId }),
       };
     })
   );
 
   app.get(
     "/api/ocio/library/:id",
-    handle((req) => {
-      const d = lib.detail(Number(req.params.id));
+    handle(async (req) => {
+      const d = await lib.detail(Number(req.params.id));
       if (!d) throw notFound();
       return d;
     })
@@ -64,56 +64,56 @@ export default function registerOcioRoutes(app) {
 
   app.post(
     "/api/ocio/library",
-    handle((req) => {
-      const out = lib.add(req.body);
-      cacheCover(out.item);
+    handle(async (req) => {
+      const out = await lib.add(req.body);
+      await cacheCover(out.item);
       return out;
     }, 201)
   );
 
   app.put(
     "/api/ocio/library/:id",
-    handle((req) => {
-      const item = lib.updateEntry(Number(req.params.id), req.body);
-      if (req.body?.work?.coverUrl) cacheCover(item);
+    handle(async (req) => {
+      const item = await lib.updateEntry(Number(req.params.id), req.body);
+      if (req.body?.work?.coverUrl) await cacheCover(item);
       return item;
     })
   );
 
   app.delete(
     "/api/ocio/library/:id",
-    handle((req) => {
-      lib.remove(Number(req.params.id));
+    handle(async (req) => {
+      await lib.remove(Number(req.params.id));
     })
   );
 
-  app.post("/api/ocio/library/:id/reread", handle((req) => lib.reread(Number(req.params.id), req.body || {})));
+  app.post("/api/ocio/library/:id/reread", handle(async (req) => await lib.reread(Number(req.params.id), req.body || {})));
 
-  app.put("/api/ocio/passes/:id", handle((req) => lib.updatePass(Number(req.params.id), req.body)));
+  app.put("/api/ocio/passes/:id", handle(async (req) => await lib.updatePass(Number(req.params.id), req.body)));
 
   app.post(
     "/api/ocio/library/:id/reviews",
-    handle((req) => {
+    handle(async (req) => {
       if (!req.body?.text?.trim()) throw Object.assign(new Error("text_required"), { status: 400 });
-      return lib.addReview(Number(req.params.id), req.body);
+      return await lib.addReview(Number(req.params.id), req.body);
     }, 201)
   );
-  app.put("/api/ocio/reviews/:id", handle((req) => lib.updateReview(Number(req.params.id), req.body)));
+  app.put("/api/ocio/reviews/:id", handle(async (req) => await lib.updateReview(Number(req.params.id), req.body)));
   app.delete(
     "/api/ocio/reviews/:id",
-    handle((req) => {
-      db.prepare("DELETE FROM reviews WHERE id = ?").run(Number(req.params.id));
+    handle(async (req) => {
+      await db.prepare("DELETE FROM reviews WHERE id = ?").run(Number(req.params.id));
     })
   );
 
-  app.post("/api/ocio/works/:workId/highlights", handle((req) => lib.addHighlight(Number(req.params.workId), req.body), 201));
+  app.post("/api/ocio/works/:workId/highlights", handle(async (req) => await lib.addHighlight(Number(req.params.workId), req.body), 201));
   app.delete(
     "/api/ocio/highlights/:id",
-    handle((req) => {
-      db.prepare("DELETE FROM highlights WHERE id = ?").run(Number(req.params.id));
+    handle(async (req) => {
+      await db.prepare("DELETE FROM highlights WHERE id = ?").run(Number(req.params.id));
     })
   );
 
-  app.get("/api/ocio/goals/:year", handle((req) => lib.goals(Number(req.params.year))));
-  app.put("/api/ocio/goals/:year/:type", handle((req) => lib.setGoal(Number(req.params.year), req.params.type, Number(req.body?.target) || 0)));
+  app.get("/api/ocio/goals/:year", handle(async (req) => await lib.goals(Number(req.params.year))));
+  app.put("/api/ocio/goals/:year/:type", handle(async (req) => await lib.setGoal(Number(req.params.year), req.params.type, Number(req.body?.target) || 0)));
 }

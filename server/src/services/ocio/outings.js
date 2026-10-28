@@ -32,13 +32,13 @@ export function createOutings(db) {
   const getOuting = db.prepare("SELECT * FROM outings WHERE id = ? AND deletedAt IS NULL");
 
   /** Salidas (no borradas) con lo gastado en cada una y cuántos gastos tiene vinculados. */
-  function list({ from, to, status } = {}) {
+  async function list({ from, to, status } = {}) {
     const clauses = ["o.deletedAt IS NULL"];
     const params = [];
     if (from) (clauses.push("o.date >= ?"), params.push(from));
     if (to) (clauses.push("o.date <= ?"), params.push(to));
     if (status) (clauses.push("o.status = ?"), params.push(status));
-    return db
+    return await db
       .prepare(
         `SELECT o.*, COALESCE(SUM(e.amount), 0) AS spent, COUNT(e.id) AS linkedCount
          FROM outings o LEFT JOIN outing_expenses oe ON oe.outingId = o.id LEFT JOIN expenses e ON e.id = oe.expenseId
@@ -47,25 +47,25 @@ export function createOutings(db) {
       .all(...params);
   }
 
-  function linked(outingId) {
-    return db.prepare(`SELECT ${EXPENSE_FIELDS} FROM outing_expenses oe JOIN expenses e ON e.id = oe.expenseId WHERE oe.outingId = ? ORDER BY e.date, e.id`).all(outingId);
+  async function linked(outingId) {
+    return await db.prepare(`SELECT ${EXPENSE_FIELDS} FROM outing_expenses oe JOIN expenses e ON e.id = oe.expenseId WHERE oe.outingId = ? ORDER BY e.date, e.id`).all(outingId);
   }
 
   /**
    * Gastos que podrían ir con la salida: los del día ±1 y los que la mencionan (±30 días).
    * Cada uno trae `reason` ("fecha" / "texto") y, si ya está vinculado a otra salida, `linkedTo`.
    */
-  function candidates(outingId) {
-    const o = getOuting.get(outingId);
+  async function candidates(outingId) {
+    const o = await getOuting.get(outingId);
     if (!o) return null;
-    const already = new Set(linked(outingId).map((e) => e.id));
+    const already = new Set((await linked(outingId)).map((e) => e.id));
     const tokens = keyTokens(o.title);
-    const near = db.prepare(`SELECT ${EXPENSE_FIELDS} FROM expenses e WHERE e.date BETWEEN ? AND ? ORDER BY e.date, e.id`).all(shift(o.date, -1), shift(o.date, 1));
-    const wide = tokens.length ? db.prepare(`SELECT ${EXPENSE_FIELDS} FROM expenses e WHERE e.date BETWEEN ? AND ?`).all(shift(o.date, -30), shift(o.date, 30)) : [];
+    const near = await db.prepare(`SELECT ${EXPENSE_FIELDS} FROM expenses e WHERE e.date BETWEEN ? AND ? ORDER BY e.date, e.id`).all(shift(o.date, -1), shift(o.date, 1));
+    const wide = tokens.length ? await db.prepare(`SELECT ${EXPENSE_FIELDS} FROM expenses e WHERE e.date BETWEEN ? AND ?`).all(shift(o.date, -30), shift(o.date, 30)) : [];
     const out = new Map();
     for (const e of near) if (!already.has(e.id)) out.set(e.id, { ...e, reason: textMatches(tokens, `${e.title} ${e.description}`) ? "texto" : "fecha" });
     for (const e of wide) if (!already.has(e.id) && !out.has(e.id) && textMatches(tokens, `${e.title} ${e.description}`)) out.set(e.id, { ...e, reason: "texto" });
-    const otherLinks = db.prepare("SELECT oe.expenseId, o.title FROM outing_expenses oe JOIN outings o ON o.id = oe.outingId WHERE oe.outingId != ?").all(outingId);
+    const otherLinks = await db.prepare("SELECT oe.expenseId, o.title FROM outing_expenses oe JOIN outings o ON o.id = oe.outingId WHERE oe.outingId != ?").all(outingId);
     const linkedTo = new Map(otherLinks.map((l) => [l.expenseId, l.title]));
     const distance = (e) => Math.abs(toDate(e.date) - toDate(o.date)) / DAY;
     return [...out.values()]
@@ -73,26 +73,26 @@ export function createOutings(db) {
       .sort((a, b) => (a.reason === b.reason ? 0 : a.reason === "texto" ? -1 : 1) || distance(a) - distance(b));
   }
 
-  function link(outingId, expenseId) {
-    if (!getOuting.get(outingId)) throw Object.assign(new Error("not_found"), { status: 404 });
-    if (!db.prepare("SELECT id FROM expenses WHERE id = ?").get(expenseId)) throw Object.assign(new Error("expense_not_found"), { status: 404 });
-    db.prepare("INSERT OR IGNORE INTO outing_expenses (outingId, expenseId, createdAt) VALUES (?, ?, ?)").run(outingId, expenseId, new Date().toISOString());
-    return linked(outingId);
+  async function link(outingId, expenseId) {
+    if (!await getOuting.get(outingId)) throw Object.assign(new Error("not_found"), { status: 404 });
+    if (!await db.prepare("SELECT id FROM expenses WHERE id = ?").get(expenseId)) throw Object.assign(new Error("expense_not_found"), { status: 404 });
+    await db.prepare("INSERT OR IGNORE INTO outing_expenses (outingId, expenseId, createdAt) VALUES (?, ?, ?)").run(outingId, expenseId, new Date().toISOString());
+    return await linked(outingId);
   }
 
-  function unlink(outingId, expenseId) {
-    db.prepare("DELETE FROM outing_expenses WHERE outingId = ? AND expenseId = ?").run(outingId, expenseId);
-    return linked(outingId);
+  async function unlink(outingId, expenseId) {
+    await db.prepare("DELETE FROM outing_expenses WHERE outingId = ? AND expenseId = ?").run(outingId, expenseId);
+    return await linked(outingId);
   }
 
   /** Para un gasto recién cargado: ¿va con alguna salida? (mismo día ±1, o la menciona dentro de ±30 días). */
-  function suggestForExpense({ date, title = "", description = "", expenseId = null }) {
+  async function suggestForExpense({ date, title = "", description = "", expenseId = null }) {
     if (!date) return [];
     const text = `${title} ${description}`;
-    const rows = db
+    const rows = await db
       .prepare("SELECT * FROM outings WHERE deletedAt IS NULL AND status != 'not_attended' AND date BETWEEN ? AND ?")
       .all(shift(date, -30), shift(date, 30));
-    const isLinked = expenseId ? new Set(db.prepare("SELECT outingId FROM outing_expenses WHERE expenseId = ?").all(expenseId).map((r) => r.outingId)) : new Set();
+    const isLinked = expenseId ? new Set((await db.prepare("SELECT outingId FROM outing_expenses WHERE expenseId = ?").all(expenseId)).map((r) => r.outingId)) : new Set();
     return rows
       .map((o) => {
         const days = Math.abs(toDate(o.date) - toDate(date)) / DAY;
@@ -109,19 +109,19 @@ export function createOutings(db) {
    * Números de la pantalla Salidas para un mes (YYYY-MM): cuántas en el año y en el mes, cuánto
    * se gastó en las del mes (cada gasto una vez), qué hacés más, cuáles faltan confirmar y las próximas.
    */
-  function summary({ month, today }) {
+  async function summary({ month, today }) {
     const year = month.slice(0, 4);
-    const all = list();
+    const all = await list();
     const ofYear = all.filter((o) => o.date.startsWith(year) && o.status !== "not_attended");
     const ofMonth = all.filter((o) => o.date.startsWith(month) && o.status !== "not_attended");
     const monthSpent =
-      db
+      (await db
         .prepare(
           `SELECT COALESCE(SUM(amount), 0) AS total FROM expenses WHERE id IN (
              SELECT oe.expenseId FROM outing_expenses oe JOIN outings o ON o.id = oe.outingId
              WHERE o.deletedAt IS NULL AND o.date LIKE ?)`
         )
-        .get(`${month}%`).total;
+        .get(`${month}%`)).total;
     const byCategory = new Map();
     for (const o of ofYear) if (o.category) byCategory.set(o.category, (byCategory.get(o.category) || 0) + 1);
     const [topId, topCount] = [...byCategory].sort((a, b) => b[1] - a[1])[0] || [];

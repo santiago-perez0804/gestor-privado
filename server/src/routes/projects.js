@@ -32,27 +32,27 @@ const sparkline = db.prepare(
 );
 
 // Diferencia de seguidores contra hace N días; si no hay historial tan viejo usa el snapshot más antiguo.
-function followerDelta(projectId, latest, days) {
+async function followerDelta(projectId, latest, days) {
   if (!latest) return null;
-  const base = snapshotOnOrBefore.get(projectId, daysAgo(days)) ?? earliestSnapshot.get(projectId);
+  const base = await snapshotOnOrBefore.get(projectId, daysAgo(days)) ?? await earliestSnapshot.get(projectId);
   return base ? latest.followers - base.followers : null;
 }
 
-function withStats(row) {
-  const latest = latestSnapshot.get(row.id);
+async function withStats(row) {
+  const latest = await latestSnapshot.get(row.id);
   return {
     ...publicProject(row),
     latest: latest ?? null,
-    delta7: followerDelta(row.id, latest, 7),
-    delta30: followerDelta(row.id, latest, 30),
-    sparkline: sparkline.all(row.id, daysAgo(30)),
+    delta7: await followerDelta(row.id, latest, 7),
+    delta30: await followerDelta(row.id, latest, 30),
+    sparkline: await sparkline.all(row.id, daysAgo(30)),
   };
 }
 
 async function connectInstagram(projectId, token) {
   const profile = await getProfile(token, { fresh: true });
   const ts = nowIso();
-  db.prepare(
+  await db.prepare(
     `UPDATE projects SET accessToken = ?, igUserId = ?, igUsername = ?, igProfilePictureUrl = ?,
      tokenIssuedAt = ?, tokenExpiresAt = ?, lastSyncError = NULL, updatedAt = ? WHERE id = ?`
   ).run(
@@ -65,21 +65,21 @@ async function connectInstagram(projectId, token) {
     ts,
     projectId
   );
-  const project = db.prepare("SELECT * FROM projects WHERE id = ?").get(projectId);
+  const project = await db.prepare("SELECT * FROM projects WHERE id = ?").get(projectId);
   await recordTodaySnapshot(project, profile);
   await backfillFollowers(project, profile.followers_count);
 }
 
 export default function registerProjectsRoutes(app) {
-  app.get("/api/projects", (req, res) => {
-    const rows = db.prepare("SELECT * FROM projects ORDER BY createdAt ASC").all();
+  app.get("/api/projects", async (req, res) => {
+    const rows = await db.prepare("SELECT * FROM projects ORDER BY createdAt ASC").all();
     res.json(rows.map(withStats));
   });
 
-  app.get("/api/projects/:id", (req, res) => {
-    const row = db.prepare("SELECT * FROM projects WHERE id = ?").get(req.params.id);
+  app.get("/api/projects/:id", async (req, res) => {
+    const row = await db.prepare("SELECT * FROM projects WHERE id = ?").get(req.params.id);
     if (!row) return res.status(404).json({ error: "not_found" });
-    res.json(withStats(row));
+    res.json(await withStats(row));
   });
 
   app.post("/api/projects", async (req, res, next) => {
@@ -96,21 +96,21 @@ export default function registerProjectsRoutes(app) {
     }
     try {
       const ts = nowIso();
-      const info = db
+      const info = await db
         .prepare(
           `INSERT INTO projects (name, description, type, icon, url, createdAt, updatedAt)
            VALUES (?, ?, ?, ?, ?, ?, ?)`
         )
         .run(name, description ?? null, type ?? "instagram", icon ?? null, url ?? null, ts, ts);
       if (token) await connectInstagram(info.lastInsertRowid, token);
-      res.status(201).json(withStats(db.prepare("SELECT * FROM projects WHERE id = ?").get(info.lastInsertRowid)));
+      res.status(201).json(await withStats(await db.prepare("SELECT * FROM projects WHERE id = ?").get(info.lastInsertRowid)));
     } catch (err) {
       next(err);
     }
   });
 
   app.put("/api/projects/:id", async (req, res, next) => {
-    const existing = db.prepare("SELECT * FROM projects WHERE id = ?").get(req.params.id);
+    const existing = await db.prepare("SELECT * FROM projects WHERE id = ?").get(req.params.id);
     if (!existing) return res.status(404).json({ error: "not_found" });
     const token = req.body.accessToken?.trim();
     if (token) {
@@ -125,7 +125,7 @@ export default function registerProjectsRoutes(app) {
       for (const key of ["name", "description", "icon", "url"]) {
         if (req.body[key] !== undefined) merged[key] = req.body[key];
       }
-      db.prepare("UPDATE projects SET name=?, description=?, icon=?, url=?, updatedAt=? WHERE id=?").run(
+      await db.prepare("UPDATE projects SET name=?, description=?, icon=?, url=?, updatedAt=? WHERE id=?").run(
         merged.name,
         merged.description,
         merged.icon,
@@ -133,22 +133,22 @@ export default function registerProjectsRoutes(app) {
         nowIso(),
         req.params.id
       );
-      res.json(withStats(db.prepare("SELECT * FROM projects WHERE id = ?").get(req.params.id)));
+      res.json(await withStats(await db.prepare("SELECT * FROM projects WHERE id = ?").get(req.params.id)));
     } catch (err) {
       next(err);
     }
   });
 
-  app.delete("/api/projects/:id", (req, res) => {
-    const existing = db.prepare("SELECT accessToken FROM projects WHERE id = ?").get(req.params.id);
+  app.delete("/api/projects/:id", async (req, res) => {
+    const existing = await db.prepare("SELECT accessToken FROM projects WHERE id = ?").get(req.params.id);
     if (existing?.accessToken) clearInstagramCache(existing.accessToken);
-    db.prepare("DELETE FROM projects WHERE id = ?").run(req.params.id);
+    await db.prepare("DELETE FROM projects WHERE id = ?").run(req.params.id);
     res.status(204).end();
   });
 
   // Datos en vivo: perfil + posts recientes. También actualiza el snapshot del día.
   app.get("/api/projects/:id/live", async (req, res) => {
-    const project = db.prepare("SELECT * FROM projects WHERE id = ?").get(req.params.id);
+    const project = await db.prepare("SELECT * FROM projects WHERE id = ?").get(req.params.id);
     if (!project) return res.status(404).json({ error: "not_found" });
     if (!project.accessToken) return res.status(400).json({ error: "not_connected" });
     if (req.query.fresh === "1") clearInstagramCache(project.accessToken);
@@ -180,12 +180,12 @@ export default function registerProjectsRoutes(app) {
         })),
       });
     } catch (err) {
-      db.prepare("UPDATE projects SET lastSyncError = ? WHERE id = ?").run(err.message, project.id);
+      await db.prepare("UPDATE projects SET lastSyncError = ? WHERE id = ?").run(err.message, project.id);
       res.status(502).json({ error: "instagram_unavailable", message: err.message });
     }
   });
 
-  app.get("/api/projects/:id/snapshots", (req, res) => {
+  app.get("/api/projects/:id/snapshots", async (req, res) => {
     const { from, to } = req.query;
     const clauses = ["projectId = ?"];
     const params = [req.params.id];
@@ -198,7 +198,7 @@ export default function registerProjectsRoutes(app) {
       params.push(to);
     }
     res.json(
-      db.prepare(`SELECT * FROM project_snapshots WHERE ${clauses.join(" AND ")} ORDER BY date ASC`).all(...params)
+      await db.prepare(`SELECT * FROM project_snapshots WHERE ${clauses.join(" AND ")} ORDER BY date ASC`).all(...params)
     );
   });
 }

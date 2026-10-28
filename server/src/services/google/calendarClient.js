@@ -87,31 +87,31 @@ export function createGoogleAuth(db, { fetchImpl = fetch } = {}) {
     const t = await tokenRequest({ code, grant_type: "authorization_code", redirect_uri: googleConfig().redirectUri });
     if (!t.refresh_token) throw new GoogleError(400, "Google no devolvió un refresh token. Quitá el acceso de la app en tu cuenta de Google y volvé a conectar.");
     access = { token: t.access_token, expiresAt: Date.now() + (t.expires_in - 60) * 1000 };
-    return saveAccount(db, { refreshTokenEnc: encryptSecret(t.refresh_token), email: emailFromIdToken(t.id_token), status: "connected", lastError: null, syncToken: null });
+    return await saveAccount(db, { refreshTokenEnc: encryptSecret(t.refresh_token), email: emailFromIdToken(t.id_token), status: "connected", lastError: null, syncToken: null });
   }
 
   /** Token de acceso vigente (lo renueva con el refresh token si venció). */
   async function getAccessToken({ force = false } = {}) {
     if (!force && access && access.expiresAt > Date.now()) return access.token;
-    const account = getAccount(db);
+    const account = await getAccount(db);
     if (!account?.refreshTokenEnc) throw new GoogleError(401, "not_connected", "not_connected");
     try {
       const t = await tokenRequest({ refresh_token: decryptSecret(account.refreshTokenEnc), grant_type: "refresh_token" });
       access = { token: t.access_token, expiresAt: Date.now() + (t.expires_in - 60) * 1000 };
       return access.token;
     } catch (err) {
-      if (err.code === "invalid_grant") saveAccount(db, { status: "revoked", lastError: "Google revocó el acceso: hay que reconectar." });
+      if (err.code === "invalid_grant") await saveAccount(db, { status: "revoked", lastError: "Google revocó el acceso: hay que reconectar." });
       throw err;
     }
   }
 
   async function disconnect() {
-    const account = getAccount(db);
+    const account = await getAccount(db);
     if (account?.refreshTokenEnc) {
       await fetchImpl(`${REVOKE_URL}?token=${encodeURIComponent(decryptSecret(account.refreshTokenEnc))}`, { method: "POST" }).catch(() => {});
     }
     access = null;
-    saveAccount(db, { refreshTokenEnc: null, status: "disconnected", syncToken: null, lastError: null });
+    await saveAccount(db, { refreshTokenEnc: null, status: "disconnected", syncToken: null, lastError: null });
   }
 
   return { authUrl, handleCallback, getAccessToken, disconnect };
@@ -154,12 +154,12 @@ export function createCalendarClient(getAccessToken, { fetchImpl = fetch, retrie
 
   const cal = (id) => `/calendars/${encodeURIComponent(id)}`;
   return {
-    listEvents: (calendarId, { syncToken, pageToken }) =>
-      request("GET", `${cal(calendarId)}/events`, { query: { syncToken, pageToken, showDeleted: "true", singleEvents: "true", maxResults: "250" } }),
-    getEvent: (calendarId, id) => request("GET", `${cal(calendarId)}/events/${encodeURIComponent(id)}`),
-    insertEvent: (calendarId, event) => request("POST", `${cal(calendarId)}/events`, { body: event }),
-    patchEvent: (calendarId, id, event, etag) => request("PATCH", `${cal(calendarId)}/events/${encodeURIComponent(id)}`, { body: event, etag }),
-    deleteEvent: (calendarId, id) => request("DELETE", `${cal(calendarId)}/events/${encodeURIComponent(id)}`),
-    createCalendar: (summary) => request("POST", "/calendars", { body: { summary, timeZone: TIME_ZONE, description: "Salidas del gestor (se sincroniza solo)." } }),
+    listEvents: async (calendarId, { syncToken, pageToken }) =>
+      await request("GET", `${cal(calendarId)}/events`, { query: { syncToken, pageToken, showDeleted: "true", singleEvents: "true", maxResults: "250" } }),
+    getEvent: async (calendarId, id) => await request("GET", `${cal(calendarId)}/events/${encodeURIComponent(id)}`),
+    insertEvent: async (calendarId, event) => await request("POST", `${cal(calendarId)}/events`, { body: event }),
+    patchEvent: async (calendarId, id, event, etag) => await request("PATCH", `${cal(calendarId)}/events/${encodeURIComponent(id)}`, { body: event, etag }),
+    deleteEvent: async (calendarId, id) => await request("DELETE", `${cal(calendarId)}/events/${encodeURIComponent(id)}`),
+    createCalendar: async (summary) => await request("POST", "/calendars", { body: { summary, timeZone: TIME_ZONE, description: "Salidas del gestor (se sincroniza solo)." } }),
   };
 }

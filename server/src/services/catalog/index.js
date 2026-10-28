@@ -33,8 +33,8 @@ export function createCatalog(db) {
   }
 
   async function catalogDetails(type, source, id) {
-    if (source === "tmdb") return tmdbDetails(cache, type, id);
-    if (source === "rawg") return rawgDetails(cache, id);
+    if (source === "tmdb") return await tmdbDetails(cache, type, id);
+    if (source === "rawg") return await rawgDetails(cache, id);
     return null; // libros: la búsqueda ya trae todo
   }
 

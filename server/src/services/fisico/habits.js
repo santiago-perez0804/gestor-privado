@@ -6,14 +6,14 @@ import { bad, notFound, nowIso, today } from "./common.js";
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 export function createHabits(db) {
-  const active = () => db.prepare("SELECT * FROM habits WHERE archived = 0 ORDER BY sortOrder, id").all();
+  const active = async () => await db.prepare("SELECT * FROM habits WHERE archived = 0 ORDER BY sortOrder, id").all();
 
   /** Hábitos con lo tildado (últimos 90 días) y el resumen: racha, 7 días, el que más se cae. */
-  function list() {
-    const t = today(db);
+  async function list() {
+    const t = await today(db);
     const from = addDays(t, -90);
-    const logs = db.prepare("SELECT habitId, localDate FROM habit_logs WHERE done = 1 AND localDate >= ?").all(from);
-    const habits = active().map((h) => ({ id: h.id, name: h.name, targetLabel: h.targetLabel, doneDays: logs.filter((l) => l.habitId === h.id).map((l) => l.localDate) }));
+    const logs = await db.prepare("SELECT habitId, localDate FROM habit_logs WHERE done = 1 AND localDate >= ?").all(from);
+    const habits = (await active()).map((h) => ({ id: h.id, name: h.name, targetLabel: h.targetLabel, doneDays: logs.filter((l) => l.habitId === h.id).map((l) => l.localDate) }));
     const summary = habitsSummary(habits, t);
     return {
       today: t,
@@ -28,29 +28,29 @@ export function createHabits(db) {
   }
 
   /** Tildar o destildar un hábito en un día (por defecto hoy). */
-  function toggle(habitId, { day, done }) {
-    if (!db.prepare("SELECT 1 FROM habits WHERE id = ?").get(Number(habitId))) throw notFound();
-    const d = day || today(db);
-    if (!DATE.test(d) || d > today(db)) throw bad("invalid_day");
-    if (done) db.prepare("INSERT INTO habit_logs (habitId, localDate, done) VALUES (?, ?, 1) ON CONFLICT(habitId, localDate) DO UPDATE SET done = 1").run(Number(habitId), d);
-    else db.prepare("DELETE FROM habit_logs WHERE habitId = ? AND localDate = ?").run(Number(habitId), d);
-    return list();
+  async function toggle(habitId, { day, done }) {
+    if (!await db.prepare("SELECT 1 FROM habits WHERE id = ?").get(Number(habitId))) throw notFound();
+    const d = day || await today(db);
+    if (!DATE.test(d) || d > await today(db)) throw bad("invalid_day");
+    if (done) await db.prepare("INSERT INTO habit_logs (habitId, localDate, done) VALUES (?, ?, 1) ON CONFLICT(habitId, localDate) DO UPDATE SET done = 1").run(Number(habitId), d);
+    else await db.prepare("DELETE FROM habit_logs WHERE habitId = ? AND localDate = ?").run(Number(habitId), d);
+    return await list();
   }
 
-  function create({ name, targetLabel }) {
+  async function create({ name, targetLabel }) {
     if (!String(name || "").trim()) throw bad("name_required");
-    const order = db.prepare("SELECT COALESCE(MAX(sortOrder), -1) + 1 AS n FROM habits").get().n;
-    db.prepare("INSERT INTO habits (name, targetLabel, sortOrder, archived, createdAt) VALUES (?, ?, ?, 0, ?)").run(name.trim(), targetLabel || null, order, nowIso());
-    return list();
+    const order = (await db.prepare("SELECT COALESCE(MAX(sortOrder), -1) + 1 AS n FROM habits").get()).n;
+    await db.prepare("INSERT INTO habits (name, targetLabel, sortOrder, archived, createdAt) VALUES (?, ?, ?, 0, ?)").run(name.trim(), targetLabel || null, order, nowIso());
+    return await list();
   }
 
-  function update(id, { name, targetLabel, archived }) {
-    const h = db.prepare("SELECT * FROM habits WHERE id = ?").get(Number(id));
+  async function update(id, { name, targetLabel, archived }) {
+    const h = await db.prepare("SELECT * FROM habits WHERE id = ?").get(Number(id));
     if (!h) throw notFound();
     const n = name !== undefined ? String(name).trim() : h.name;
     if (!n) throw bad("name_required");
-    db.prepare("UPDATE habits SET name = ?, targetLabel = ?, archived = ? WHERE id = ?").run(n, targetLabel !== undefined ? targetLabel || null : h.targetLabel, archived !== undefined ? (archived ? 1 : 0) : h.archived, h.id);
-    return list();
+    await db.prepare("UPDATE habits SET name = ?, targetLabel = ?, archived = ? WHERE id = ?").run(n, targetLabel !== undefined ? targetLabel || null : h.targetLabel, archived !== undefined ? (archived ? 1 : 0) : h.archived, h.id);
+    return await list();
   }
 
   return { list, toggle, create, update };

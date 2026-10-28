@@ -1,27 +1,29 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { db } from "./index.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-export function seedExerciseLibrary() {
-  const { count } = db.prepare("SELECT COUNT(*) as count FROM exercise_library").get();
+/** Carga la biblioteca grande (en inglés) si la tabla está vacía y el JSON está disponible. */
+export async function seedExerciseLibrary() {
+  const { count } = await db.prepare("SELECT COUNT(*) as count FROM exercise_library").get();
   if (count > 0) return;
 
   const path = join(__dirname, "..", "..", "data", "exercise-library.json");
+  if (!existsSync(path)) return;
   const exercises = JSON.parse(readFileSync(path, "utf-8"));
 
   const insert = db.prepare(`
     INSERT INTO exercise_library
       (id, name, force, level, mechanic, equipment, primaryMuscles, secondaryMuscles, instructions, category, images)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT (id) DO NOTHING
   `);
 
-  db.exec("BEGIN");
-  try {
+  await db.tx(async () => {
     for (const ex of exercises) {
-      insert.run(
+      await insert.run(
         ex.id,
         ex.name,
         ex.force ?? null,
@@ -35,10 +37,6 @@ export function seedExerciseLibrary() {
         JSON.stringify(ex.images ?? [])
       );
     }
-    db.exec("COMMIT");
-    console.log(`[seed] exercise_library: ${exercises.length} ejercicios cargados`);
-  } catch (err) {
-    db.exec("ROLLBACK");
-    throw err;
-  }
+  });
+  console.log(`[seed] exercise_library: ${exercises.length} ejercicios cargados`);
 }

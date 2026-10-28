@@ -2,13 +2,13 @@ import { db, nowIso } from "../db/index.js";
 import { generateDueRecurringExpenses } from "../services/recurringExpenses.js";
 
 export default function registerExpensesRoutes(app) {
-  app.get("/api/expenses", (req, res) => {
-    generateDueRecurringExpenses();
-    const rows = db.prepare("SELECT * FROM expenses ORDER BY date DESC, id DESC").all();
+  app.get("/api/expenses", async (req, res) => {
+    await generateDueRecurringExpenses();
+    const rows = await db.prepare("SELECT * FROM expenses ORDER BY date DESC, id DESC").all();
     res.json(rows);
   });
 
-  app.post("/api/expenses", (req, res) => {
+  app.post("/api/expenses", async (req, res) => {
     const {
       title,
       description,
@@ -27,7 +27,7 @@ export default function registerExpensesRoutes(app) {
       return res.status(400).json({ error: "title_amount_date_required" });
     }
     const ts = nowIso();
-    const info = db
+    const info = await db
       .prepare(
         `INSERT INTO expenses
           (title, description, amount, currency, originalAmount, exchangeRate, installments, date, icon, category, paymentMethod, merchantType, createdAt, updatedAt)
@@ -49,11 +49,11 @@ export default function registerExpensesRoutes(app) {
         ts,
         ts
       );
-    res.status(201).json(db.prepare("SELECT * FROM expenses WHERE id = ?").get(info.lastInsertRowid));
+    res.status(201).json(await db.prepare("SELECT * FROM expenses WHERE id = ?").get(info.lastInsertRowid));
   });
 
   // Importación (p. ej. desde el CSV del resumen de la tarjeta): todo o nada.
-  app.post("/api/expenses/bulk", (req, res) => {
+  app.post("/api/expenses/bulk", async (req, res) => {
     const items = Array.isArray(req.body?.items) ? req.body.items : null;
     if (!items?.length) return res.status(400).json({ error: "items_required" });
     if (items.some((e) => !e.title || e.amount === undefined || !e.date)) {
@@ -65,11 +65,10 @@ export default function registerExpensesRoutes(app) {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`
     );
     const ids = [];
-    db.exec("BEGIN");
-    try {
+    await db.tx(async () => {
       for (const e of items) {
         const ts = nowIso();
-        const info = insert.run(
+        const info = await insert.run(
           e.title,
           e.description ?? null,
           e.amount,
@@ -86,17 +85,13 @@ export default function registerExpensesRoutes(app) {
         );
         ids.push(info.lastInsertRowid);
       }
-      db.exec("COMMIT");
-    } catch (err) {
-      db.exec("ROLLBACK");
-      throw err;
-    }
-    const rows = db.prepare(`SELECT * FROM expenses WHERE id IN (${ids.map(() => "?").join(",")})`).all(...ids);
+    });
+    const rows = await db.prepare(`SELECT * FROM expenses WHERE id IN (${ids.map(() => "?").join(",")})`).all(...ids);
     res.status(201).json(rows);
   });
 
-  app.put("/api/expenses/:id", (req, res) => {
-    const existing = db.prepare("SELECT * FROM expenses WHERE id = ?").get(req.params.id);
+  app.put("/api/expenses/:id", async (req, res) => {
+    const existing = await db.prepare("SELECT * FROM expenses WHERE id = ?").get(req.params.id);
     if (!existing) return res.status(404).json({ error: "not_found" });
     const merged = {
       title: req.body.title ?? existing.title,
@@ -112,7 +107,7 @@ export default function registerExpensesRoutes(app) {
       paymentMethod: req.body.paymentMethod !== undefined ? req.body.paymentMethod : existing.paymentMethod,
       merchantType: req.body.merchantType !== undefined ? req.body.merchantType : existing.merchantType,
     };
-    db.prepare(
+    await db.prepare(
       `UPDATE expenses SET title=?, description=?, amount=?, currency=?, originalAmount=?, exchangeRate=?,
        installments=?, date=?, icon=?, category=?, paymentMethod=?, merchantType=?, updatedAt=? WHERE id=?`
     ).run(
@@ -131,11 +126,11 @@ export default function registerExpensesRoutes(app) {
       nowIso(),
       req.params.id
     );
-    res.json(db.prepare("SELECT * FROM expenses WHERE id = ?").get(req.params.id));
+    res.json(await db.prepare("SELECT * FROM expenses WHERE id = ?").get(req.params.id));
   });
 
-  app.delete("/api/expenses/:id", (req, res) => {
-    db.prepare("DELETE FROM expenses WHERE id = ?").run(req.params.id);
+  app.delete("/api/expenses/:id", async (req, res) => {
+    await db.prepare("DELETE FROM expenses WHERE id = ?").run(req.params.id);
     res.status(204).end();
   });
 }

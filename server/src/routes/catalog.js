@@ -17,15 +17,15 @@ export default function registerCatalogRoutes(app) {
       // Marca lo que ya tenés ("Ya en tu biblioteca"). Una coincidencia solo por título se marca
       // en el primer resultado que coincide (el más relevante), no en todos los homónimos.
       const titleMatched = new Set();
-      out.results = out.results.map((r) => {
-        const existing = lib.findDuplicate(r);
+      out.results = (await Promise.all(out.results.map(async (r) => {
+        const existing = await lib.findDuplicate(r);
         if (!existing) return r;
         if (existing.match === "title") {
           if (titleMatched.has(existing.id)) return r;
           titleMatched.add(existing.id);
         }
         return { ...r, inLibrary: { id: existing.id, status: existing.status, match: existing.match } };
-      });
+      })));
       res.json(out);
     } catch (err) {
       if (err.status === 400) return res.status(400).json({ error: err.message });

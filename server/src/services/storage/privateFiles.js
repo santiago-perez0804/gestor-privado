@@ -1,36 +1,41 @@
-// Almacenamiento privado de archivos (fotos de progreso). Hoy: una carpeta fuera de todo lo que se
-// sirve como estático, con nombres aleatorios. En la nube se reemplaza por un bucket privado con URLs
-// firmadas manteniendo la misma interfaz: save / path / remove.
-import { writeFileSync, existsSync, unlinkSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
+// Fotos de progreso: archivos privados con nombres aleatorios (imposibles de adivinar), en el bucket
+// privado "photos" (Supabase) o en una carpeta fuera de todo lo que se sirve como estático (local).
+// Se sirven solo por la API, con sesión y sin caché.
 import { randomUUID } from "node:crypto";
+import { storage, localStore } from "./index.js";
 
 const KEY = /^[0-9a-f-]{36}(\.thumb)?\.(jpg|jpeg|png|webp|heic)$/;
 
-export function createPrivateFiles(dir) {
-  mkdirSync(dir, { recursive: true });
+/** @param {string | ReturnType<typeof storage>} [where] carpeta local (tests) o un almacenamiento; por defecto el bucket "photos". */
+export function createPrivateFiles(where) {
+  const store = typeof where === "string" ? localStore(where) : where ?? storage("photos");
+  const valid = (key) => KEY.test(String(key || ""));
   return {
-    /** Guarda y devuelve la clave (nombre aleatorio, imposible de adivinar). */
-    save(buf, ext, { thumbOf = null } = {}) {
+    /** Guarda y devuelve la clave. */
+    async save(buf, ext, { thumbOf = null } = {}) {
       const key = thumbOf ? thumbOf.replace(/\.(jpg|png)$/, `.thumb.${ext}`) : `${randomUUID()}.${ext}`;
-      writeFileSync(join(dir, key), buf);
+      await store.put(key, buf, { contentType: ext === "png" ? "image/png" : "image/jpeg" });
       return key;
     },
-    /** Ruta en disco de una clave válida (o null). Nunca sale de la carpeta. */
-    path(key) {
-      if (!KEY.test(String(key || ""))) return null;
-      const p = join(dir, key);
-      return existsSync(p) ? p : null;
+    /** ¿Existe el archivo de esa clave? (clave inválida = no). */
+    async has(key) {
+      return valid(key) && (await store.exists(key));
     },
-    remove(key) {
-      const p = this.path(key);
-      if (p) {
-        try {
-          unlinkSync(p);
-        } catch {
-          // en uso: queda huérfano, no es grave
-        }
+    async get(key) {
+      return valid(key) ? store.get(key) : null;
+    },
+    async remove(key) {
+      if (!valid(key)) return;
+      try {
+        await store.remove(key);
+      } catch {
+        // queda huérfano, no es grave
       }
+    },
+    /** Manda el archivo (local) o redirige a una URL firmada de pocos minutos (nube). Nunca se cachea. */
+    async serve(res, key, { contentType } = {}) {
+      if (!valid(key)) return res.status(404).json({ error: "not_found" });
+      return store.serve(res, key, { cacheControl: "private, no-store", contentType, expiresIn: 120 });
     },
   };
 }

@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { testDb } from "./helpers/pgdb.js";
 import { DatabaseSync } from "node:sqlite";
 import { mkdtempSync, rmSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
@@ -65,19 +66,15 @@ function fakeDropbox() {
   return { state, impl };
 }
 
-function setup() {
-  const db = new DatabaseSync(":memory:");
-  db.exec("PRAGMA foreign_keys = ON");
-  db.exec(gastosSchema);
-  db.exec(ocioSchema);
-  migrateOcioV2(db);
+async function setup() {
+  const db = await testDb();
   const lib = createLibrary(db);
   const dir = mkdtempSync(join(tmpdir(), "kosync-"));
   const fake = fakeDropbox();
   const auth = createDropboxAuth(db, { fetchImpl: fake.impl });
   const files = createDropboxFiles(auth.getAccessToken, { fetchImpl: fake.impl, backoff: () => 0 });
   const sync = createKoreaderSync({ db, lib, files, importsDir: dir });
-  const connect = () => saveAccount(db, { refreshTokenEnc: encryptSecret("rt-123"), status: "connected" });
+  const connect = async () => await saveAccount(db, { refreshTokenEnc: encryptSecret("rt-123"), status: "connected" });
   return { db, lib, dir, fake, sync, connect, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
@@ -91,17 +88,17 @@ test("ruta en Dropbox: carpeta o archivo, siempre con / adelante y sin ..", () =
 });
 
 test("sin cuenta conectada no hace nada", async (t) => {
-  const s = setup();
+  const s = await setup();
   t.after(s.cleanup);
   assert.deepEqual(await s.sync.syncNow(), { changed: false, skipped: "not_connected" });
   assert.equal(s.fake.state.calls.metadata, 0);
 });
 
 test("sincroniza: importa lo conocido, deja pendiente lo desconocido y no baja de nuevo si no cambió", async (t) => {
-  const s = setup();
+  const s = await setup();
   t.after(s.cleanup);
-  s.connect();
-  const known = s.lib.add({ work: { type: "book", title: "1984", creators: ["George Orwell"] }, entry: { status: "in_progress" } }).item;
+  await s.connect();
+  const known = (await s.lib.add({ work: { type: "book", title: "1984", creators: ["George Orwell"] }, entry: { status: "in_progress" } })).item;
   s.fake.state.file = koreaderFile(s.dir, "a.sqlite3", [
     { id: 1, title: "1984", authors: "George Orwell", pages: pagesFrom(T0, 20) },
     { id: 2, title: "Un libro raro", authors: "Nadie", pages: pagesFrom(T0 + 86_400, 10) },
@@ -113,24 +110,24 @@ test("sincroniza: importa lo conocido, deja pendiente lo desconocido y no baja d
   assert.equal(first.books, 1, "solo el que coincide");
   assert.equal(first.sessionsNew, 1);
   assert.equal(first.pending, 1);
-  assert.equal(s.db.prepare("SELECT COUNT(*) n FROM reading_sessions WHERE workId = ?").get(known.workId).n, 1);
+  assert.equal((await s.db.prepare("SELECT COUNT(*) n FROM reading_sessions WHERE workId = ?").get(known.workId)).n, 1);
   assert.ok(existsSync(join(s.dir, SYNCED_FILE)));
-  assert.equal(getAccount(s.db).lastRev, "r1");
-  assert.equal(getAccount(s.db).lastError, null);
+  assert.equal((await getAccount(s.db)).lastRev, "r1");
+  assert.equal((await getAccount(s.db)).lastError, null);
 
   const again = await s.sync.syncNow();
   assert.deepEqual(again, { changed: false });
   assert.equal(s.fake.state.calls.download, 1, "mismo rev: no vuelve a bajar");
 
-  const { books } = s.sync.pending();
+  const { books } = await s.sync.pending();
   assert.equal(books.length, 1);
   assert.equal(books[0].title, "Un libro raro");
   assert.equal(books[0].sessionCount, 1);
 
-  const resolved = s.sync.resolve({ [books[0].key]: "new" });
+  const resolved = await s.sync.resolve({ [books[0].key]: "new" });
   assert.equal(resolved.created, 1);
   assert.equal(resolved.pending, 0);
-  assert.ok(s.lib.list({ type: "book" }).some((i) => i.title === "Un libro raro"));
+  assert.ok((await s.lib.list({ type: "book" })).some((i) => i.title === "Un libro raro"));
 
   // Archivo nuevo en Dropbox: el vinculado sigue solo, uno nuevo se ignora para siempre.
   s.fake.state.file = koreaderFile(s.dir, "b.sqlite3", [
@@ -143,41 +140,41 @@ test("sincroniza: importa lo conocido, deja pendiente lo desconocido y no baja d
   assert.equal(second.sessionsNew, 1, "solo la sesión nueva de 1984");
   assert.equal(second.books, 2, "1984 y el que se agregó antes (ya vinculado)");
   assert.equal(second.pending, 1);
-  const router = s.sync.pending().books[0];
-  assert.equal(s.sync.resolve({ [router.key]: "ignore" }).ignored, 1);
+  const router = (await s.sync.pending()).books[0];
+  assert.equal((await s.sync.resolve({ [router.key]: "ignore" })).ignored, 1);
   s.fake.state.rev = "r3";
   assert.equal((await s.sync.syncNow()).pending, 0, "lo ignorado no vuelve a aparecer");
 });
 
 test("pendiente a una obra existente; valores inválidos", async (t) => {
-  const s = setup();
+  const s = await setup();
   t.after(s.cleanup);
-  s.connect();
-  const dune = s.lib.add({ work: { type: "book", title: "Dune (edición de bolsillo)" } }).item;
+  await s.connect();
+  const dune = (await s.lib.add({ work: { type: "book", title: "Dune (edición de bolsillo)" } })).item;
   s.fake.state.file = koreaderFile(s.dir, "a.sqlite3", [{ id: 1, title: "Dune", authors: "Frank Herbert", pages: pagesFrom(T0, 8) }]);
   s.fake.state.rev = "r1";
   assert.equal((await s.sync.syncNow()).pending, 1, "título parecido pero no igual: pregunta");
-  const [b] = s.sync.pending().books;
+  const [b] = (await s.sync.pending()).books;
   assert.equal(b.candidates[0].workId, dune.workId, "sugiere el parecido");
-  assert.throws(() => s.sync.resolve({ [b.key]: "999999" }), { message: "invalid_work" });
-  const r = s.sync.resolve({ [b.key]: String(dune.workId) });
+  await assert.rejects(async () => await s.sync.resolve({ [b.key]: "999999" }), { message: "invalid_work" });
+  const r = await s.sync.resolve({ [b.key]: String(dune.workId) });
   assert.equal(r.sessionsNew, 1);
   assert.equal(r.pending, 0);
 });
 
 test("errores: archivo que no existe, archivo que no es SQLite, token revocado y 401 con reintento", async (t) => {
-  const s = setup();
+  const s = await setup();
   t.after(s.cleanup);
-  s.connect();
+  await s.connect();
   const missing = await s.sync.syncNow();
   assert.equal(missing.missing, true);
-  assert.match(getAccount(s.db).lastError, /sincronizá una vez desde el Kindle/);
+  assert.match((await getAccount(s.db)).lastError, /sincronizá una vez desde el Kindle/);
 
   s.fake.state.file = Buffer.from("<html>no soy una base</html>".padEnd(64, " "));
   s.fake.state.rev = "r1";
   await assert.rejects(s.sync.syncNow(), { code: "not_sqlite" });
-  assert.equal(getAccount(s.db).status, "error");
-  assert.equal(getAccount(s.db).lastRev, null, "no se marca como leído");
+  assert.equal((await getAccount(s.db)).status, "error");
+  assert.equal((await getAccount(s.db)).lastRev, null, "no se marca como leído");
 
   // 401: renueva el token y reintenta una vez.
   s.fake.state.file = koreaderFile(s.dir, "ok.sqlite3", [{ id: 1, title: "X", authors: "", pages: pagesFrom(T0, 2) }]);
@@ -185,14 +182,14 @@ test("errores: archivo que no existe, archivo que no es SQLite, token revocado y
   const tokensBefore = s.fake.state.calls.token;
   assert.equal((await s.sync.syncNow()).changed, true);
   assert.equal(s.fake.state.calls.token, tokensBefore + 1);
-  assert.equal(getAccount(s.db).status, "connected");
+  assert.equal((await getAccount(s.db)).status, "connected");
 
   // Acceso revocado del lado de Dropbox.
-  const s2 = setup();
+  const s2 = await setup();
   t.after(s2.cleanup);
-  s2.connect();
+  await s2.connect();
   s2.fake.state.tokenError = "invalid_grant";
   await assert.rejects(s2.sync.syncNow());
-  assert.equal(getAccount(s2.db).status, "revoked");
-  assert.match(getAccount(s2.db).lastError, /reconectar/);
+  assert.equal((await getAccount(s2.db)).status, "revoked");
+  assert.match((await getAccount(s2.db)).lastError, /reconectar/);
 });

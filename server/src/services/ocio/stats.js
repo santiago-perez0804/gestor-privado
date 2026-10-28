@@ -10,8 +10,8 @@ export function createOcioStats(db, lib) {
   const cache = new Map();
 
   /** Huella de los datos: si no cambió, se devuelve lo calculado antes. */
-  function dataVersion() {
-    return db
+  async function dataVersion() {
+    return (await db
       .prepare(
         `SELECT
           (SELECT COUNT(*) || ':' || IFNULL(MAX(updatedAt), '') FROM library_entries) || '|' ||
@@ -24,25 +24,25 @@ export function createOcioStats(db, lib) {
           (SELECT COUNT(*) FROM artworks) || '|' ||
           (SELECT COUNT(*) || ':' || IFNULL(SUM(target), 0) FROM ocio_goals) AS v`
       )
-      .get().v;
+      .get()).v;
   }
 
-  function memo(key, compute) {
-    const v = dataVersion();
+  async function memo(key, compute) {
+    const v = await dataVersion();
     const hit = cache.get(key);
     if (hit && hit.v === v) return hit.value;
-    const value = compute();
+    const value = await compute();
     cache.set(key, { v, value });
     return value;
   }
 
-  const sessions = () => db.prepare("SELECT workId, startTime, durationSeconds, pagesRead FROM reading_sessions ORDER BY startTime").all();
-  const finishedOfYear = (year) => finishedRows(db).filter((f) => f.date && Number(f.date.slice(0, 4)) === year);
+  const sessions = async () => await db.prepare("SELECT workId, startTime, durationSeconds, pagesRead FROM reading_sessions ORDER BY startTime").all();
+  const finishedOfYear = async (year) => (await finishedRows(db)).filter((f) => f.date && Number(f.date.slice(0, 4)) === year);
 
-  function perType(year, type) {
+  async function perType(year, type) {
     const today = todayLocal();
-    const done = finishedOfYear(year).filter((f) => f.type === type);
-    const items = lib.list({ type });
+    const done = (await finishedOfYear(year)).filter((f) => f.type === type);
+    const items = await lib.list({ type });
     const creators = new Map();
     for (const f of done) {
       const it = items.find((i) => i.id === f.entryId);
@@ -68,29 +68,29 @@ export function createOcioStats(db, lib) {
     };
   }
 
-  function bookStats(year) {
+  async function bookStats(year) {
     const today = todayLocal();
-    const done = finishedOfYear(year).filter((f) => f.type === "book");
-    const reading = readingStats(sessions(), { year, today });
-    const target = lib.goals(year).find((g) => g.type === "book")?.target ?? null;
+    const done = (await finishedOfYear(year)).filter((f) => f.type === "book");
+    const reading = readingStats(await sessions(), { year, today });
+    const target = (await lib.goals(year)).find((g) => g.type === "book")?.target ?? null;
     const isCurrent = Number(today.slice(0, 4)) === year;
     // Géneros de los libros que "tocaste" este año: terminados o con lectura en el año, o en curso.
-    const readIds = new Set(sessions().filter((s) => new Date(s.startTime).getFullYear() === year).map((s) => s.workId));
-    const touched = lib.list({ type: "book" }).filter((i) => readIds.has(i.workId) || done.some((f) => f.entryId === i.id) || (isCurrent && i.status === "in_progress"));
-    const titleOf = (workId) => lib.list({ type: "book" }).find((i) => i.workId === workId)?.title ?? null;
+    const readIds = new Set((await sessions()).filter((s) => new Date(s.startTime).getFullYear() === year).map((s) => s.workId));
+    const touched = (await lib.list({ type: "book" })).filter((i) => readIds.has(i.workId) || done.some((f) => f.entryId === i.id) || (isCurrent && i.status === "in_progress"));
+    const titleOf = async (workId) => (await lib.list({ type: "book" })).find((i) => i.workId === workId)?.title ?? null;
     return {
-      ...perType(year, "book"),
+      ...await perType(year, "book"),
       goal: target ? (isCurrent ? goalProjection({ done: done.length, target, today }) : { done: done.length, target, ratio: Math.min(1, done.length / target) }) : null,
-      reading: { ...reading, recordDay: reading.recordDay ? { ...reading.recordDay, title: titleOf(reading.recordDay.workId) } : null },
+      reading: { ...reading, recordDay: reading.recordDay ? { ...reading.recordDay, title: await titleOf(reading.recordDay.workId) } : null },
       records: bookRecords(done),
       genres: topGenres(touched, 6),
       touched: touched.length,
     };
   }
 
-  function general(year) {
-    const done = finishedOfYear(year);
-    const outings = activeOutings(db).filter((o) => o.date.startsWith(String(year)) && o.status !== "not_attended");
+  async function general(year) {
+    const done = await finishedOfYear(year);
+    const outings = (await activeOutings(db)).filter((o) => o.date.startsWith(String(year)) && o.status !== "not_attended");
     const outingsMonthly = Array(12).fill(0);
     for (const o of outings) {
       const m = Number(o.date.slice(5, 7)) - 1;
@@ -108,31 +108,31 @@ export function createOcioStats(db, lib) {
   }
 
   /** Estadísticas de un año, en general o de un tipo. */
-  function stats(year, type) {
-    return memo(`stats:${year}:${type || "general"}`, () => {
-      if (type === "book") return { year, type, ...bookStats(year) };
-      if (TYPES.includes(type)) return { year, type, ...perType(year, type) };
-      return { year, type: "general", ...general(year) };
+  async function stats(year, type) {
+    return await memo(`stats:${year}:${type || "general"}`, async () => {
+      if (type === "book") return { year, type, ...await bookStats(year) };
+      if (TYPES.includes(type)) return { year, type, ...await perType(year, type) };
+      return { year, type: "general", ...await general(year) };
     });
   }
 
   /** Todo lo del "Resumen anual" de una vez. */
-  function wrapped(year) {
-    return memo(`wrapped:${year}`, () => {
+  async function wrapped(year) {
+    return await memo(`wrapped:${year}`, async () => {
       const today = todayLocal();
-      const done = finishedOfYear(year).sort((a, b) => a.date.localeCompare(b.date));
-      const g = general(year);
-      const reading = readingStats(sessions(), { year, today });
-      const outings = activeOutings(db).filter((o) => o.date.startsWith(String(year)) && o.status !== "not_attended");
+      const done = (await finishedOfYear(year)).sort((a, b) => a.date.localeCompare(b.date));
+      const g = await general(year);
+      const reading = readingStats(await sessions(), { year, today });
+      const outings = (await activeOutings(db)).filter((o) => o.date.startsWith(String(year)) && o.status !== "not_attended");
       const cats = new Map();
       for (const o of outings) if (o.category) cats.set(o.category, (cats.get(o.category) || 0) + 1);
       const [topCat, topCatCount] = [...cats].sort((a, b) => b[1] - a[1])[0] || [];
-      const spent = db
+      const spent = (await db
         .prepare(
           `SELECT COALESCE(SUM(amount), 0) AS total FROM expenses WHERE id IN (
              SELECT oe.expenseId FROM outing_expenses oe JOIN outings o ON o.id = oe.outingId WHERE o.deletedAt IS NULL AND o.date LIKE ?)`
         )
-        .get(`${year}-%`).total;
+        .get(`${year}-%`)).total;
       const favoriteMonth = g.monthly.reduce((best, m) => (m.total > (best?.total ?? 0) ? m : best), null);
       const night = reading.hourBuckets.filter((b) => b.id === "night" || b.id === "late").reduce((s, b) => s + b.share, 0);
       return {
@@ -148,7 +148,7 @@ export function createOcioStats(db, lib) {
         reading: { pages: reading.pages, hours: Math.round(reading.seconds / 3600), bestStreak: reading.bestStreak, daysWithReading: reading.daysWithReading, pagesPerHour: reading.pagesPerHour, nightShare: night },
         movieHours: Math.round(done.filter((f) => f.type === "movie").reduce((s, f) => s + (f.metadata?.runtime || 0), 0) / 60),
         outings: { count: outings.length, topCategory: topCat ? { id: topCat, count: topCatCount } : null, spent },
-        artworks: db.prepare("SELECT COUNT(*) AS n FROM artworks WHERE createdOn LIKE ? OR (createdOn IS NULL AND createdAt LIKE ?)").get(`${year}%`, `${year}%`).n,
+        artworks: (await db.prepare("SELECT COUNT(*) AS n FROM artworks WHERE createdOn LIKE ? OR (createdOn IS NULL AND createdAt LIKE ?)").get(`${year}%`, `${year}%`)).n,
       };
     });
   }

@@ -8,7 +8,7 @@ import { sharedSchema } from "../src/db/schema/shared.js";
 import { fisicoSchema } from "../src/db/schema/fisico.js";
 import { fisicoSchemaV1 } from "./fixtures/fisicoSchemaV1.js";
 import { migrateFisicoV2, describeFisicoMigration } from "../src/db/migrations/fisicoV2.js";
-import { FISICO_EXERCISES } from "../src/db/seeds/fisicoExercises.js";
+import { FISICO_EXERCISES, FISICO_CARDIO } from "../src/db/seeds/fisicoExercises.js";
 import { MUSCLE_IDS, EQUIPMENT_IDS } from "../../shared/fisico/constants.js";
 
 const ts = "2026-10-01T10:00:00.000Z";
@@ -52,6 +52,7 @@ test("migra una base vieja sin perder nada y con resumen", (t) => {
   assert.equal(s.totals.weighIns, 3, "pesadas intactas");
   assert.deepEqual(db.prepare("SELECT weight FROM weights ORDER BY recordedAt").all().map((r) => r.weight), [91.8, 90.9, 90.1]);
   assert.equal(s.exercisesSeeded, FISICO_EXERCISES.length);
+  assert.equal(s.cardioSeeded, FISICO_CARDIO.length);
   assert.equal(s.habitsSeeded, 5);
   assert.equal(s.weightGoal, 86);
   assert.equal(db.prepare("SELECT target FROM goals WHERE type = 'weight'").get().target, 86);
@@ -104,7 +105,8 @@ test("base nueva: crea todo y la segunda vez no hace nada; lo borrado no vuelve"
   const s = migrateFisicoV2(db, { backupsDir: join(dir, "backups"), privatePhotosDir: join(dir, "private") });
   assert.equal(s.ran, true);
   assert.equal(s.activePlan, null, "sin planes no hay plan activo");
-  assert.equal(s.totals.exercises, FISICO_EXERCISES.length);
+  assert.equal(s.totals.exercises, FISICO_EXERCISES.length + FISICO_CARDIO.length, "fuerza y cardio");
+  assert.equal(s.cardioSeeded, FISICO_CARDIO.length);
   db.prepare("DELETE FROM habits WHERE name = 'Agua'").run();
   const again = migrateFisicoV2(db, { backupsDir: join(dir, "backups") });
   assert.equal(again.ran, false);

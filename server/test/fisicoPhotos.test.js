@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { testDb } from "./helpers/pgdb.js";
 import { DatabaseSync } from "node:sqlite";
 import { mkdtempSync, rmSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -50,54 +51,52 @@ test("quita EXIF (ubicación) de JPEG y PNG sin romper la imagen", () => {
   assert.ok(pclean.includes(Buffer.from("IDAT")));
 });
 
-test("almacenamiento privado: claves aleatorias y nada fuera de la carpeta", (t) => {
+test("almacenamiento privado: claves aleatorias y nada fuera de la carpeta", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "priv-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const files = createPrivateFiles(dir);
-  const key = files.save(Buffer.from("x"), "jpg");
+  const key = await files.save(Buffer.from("x"), "jpg");
   assert.match(key, /^[0-9a-f-]{36}\.jpg$/);
-  assert.ok(files.path(key));
-  assert.equal(files.path("../fisico.db"), null);
-  assert.equal(files.path("..\\..\\x.jpg"), null);
-  assert.match(files.save(Buffer.from("y"), "jpg", { thumbOf: key }), /\.thumb\.jpg$/);
+  assert.ok(await files.has(key));
+  assert.equal(await files.has("../fisico.db"), false);
+  assert.equal(await files.has("..\\..\\x.jpg"), false);
+  assert.equal(await files.get("../fisico.db"), null, "nada fuera de la carpeta");
+  assert.match(await files.save(Buffer.from("y"), "jpg", { thumbOf: key }), /\.thumb\.jpg$/);
 });
 
-test("fotos: subir sin EXIF, reemplazar la misma pose, comparar fechas y borrar con sus archivos", (t) => {
-  const db = new DatabaseSync(":memory:");
-  db.exec("PRAGMA foreign_keys = ON");
-  db.exec(sharedSchema);
-  db.exec(fisicoSchema);
-  migrateFisicoV2(db);
+test("fotos: subir sin EXIF, reemplazar la misma pose, comparar fechas y borrar con sus archivos", async (t) => {
+  const db = await testDb();
   const dir = mkdtempSync(join(tmpdir(), "fotos-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const history = createHistory(db);
   const plans = createPlans(db, { history });
-  const photos = createPhotos(db, { files: createPrivateFiles(dir), body: createBody(db), plans });
-  db.prepare("INSERT INTO weights (weight, recordedAt, createdAt) VALUES (92.3, '2026-09-18T08:00', 'x'), (91.7, '2026-10-16T08:00', 'x')").run();
-  db.prepare("INSERT INTO measurement_sessions (id, measuredOn, createdAt) VALUES (1, '2026-09-18', 'x'), (2, '2026-10-16', 'x')").run();
-  db.prepare(
+  const files = createPrivateFiles(dir);
+  const photos = createPhotos(db, { files, body: createBody(db), plans });
+  await db.prepare("INSERT INTO weights (weight, recordedAt, createdAt) VALUES (92.3, '2026-09-18T08:00', 'x'), (91.7, '2026-10-16T08:00', 'x')").run();
+  await db.prepare("INSERT INTO measurement_sessions (id, measuredOn, createdAt) VALUES (1, '2026-09-18', 'x'), (2, '2026-10-16', 'x')").run();
+  await db.prepare(
     "INSERT INTO measurements (sessionId, measuredOn, zone, valueCm, createdAt) VALUES (1, '2026-09-18', 'cintura', 97.5, 'x'), (2, '2026-10-16', 'cintura', 96.5, 'x'), (1, '2026-09-18', 'brazo', 36, 'x'), (2, '2026-10-16', 'brazo', 36.5, 'x')"
   ).run();
 
-  const a = photos.upload({ image: jpegWithExif(), thumb: jpegWithExif(), date: "2026-09-18", pose: "front" });
+  const a = await photos.upload({ image: jpegWithExif(), thumb: jpegWithExif(), date: "2026-09-18", pose: "front" });
   assert.equal(a.width, 640);
   assert.equal(a.hasThumb, true);
-  assert.equal(hasExif(readFileSync(photos.file(a.id).path)), false, "guardada sin EXIF");
-  assert.equal(hasExif(readFileSync(photos.file(a.id, { thumb: true }).path)), false);
-  assert.throws(() => photos.upload({ image: Buffer.from("no soy imagen ni a palos"), date: "2026-09-18" }), { message: "unsupported_type" });
-  assert.throws(() => photos.upload({ image: jpegWithExif(), date: "2026-09-18", pose: "arriba" }), { message: "invalid_pose" });
-  photos.upload({ image: jpegWithExif(), date: "2026-09-18", pose: "front" }); // reemplaza
+  assert.equal(hasExif(await files.get((await photos.file(a.id)).key)), false, "guardada sin EXIF");
+  assert.equal(hasExif(await files.get((await photos.file(a.id, { thumb: true })).key)), false);
+  await assert.rejects(async () => await photos.upload({ image: Buffer.from("no soy imagen ni a palos"), date: "2026-09-18" }), { message: "unsupported_type" });
+  await assert.rejects(async () => await photos.upload({ image: jpegWithExif(), date: "2026-09-18", pose: "arriba" }), { message: "invalid_pose" });
+  await photos.upload({ image: jpegWithExif(), date: "2026-09-18", pose: "front" }); // reemplaza
   assert.equal(readdirSync(dir).length, 1, "la anterior y su miniatura se borraron");
-  photos.upload({ image: jpegWithExif(), date: "2026-10-16", pose: "front" });
-  const l = photos.list();
+  await photos.upload({ image: jpegWithExif(), date: "2026-10-16", pose: "front" });
+  const l = await photos.list();
   assert.equal(l.sessions.length, 2);
   assert.equal(l.sessions[0].date, "2026-10-16");
   assert.equal(l.next.date, "2026-10-30", "cada 2 semanas");
-  const c = photos.compare("2026-09-18", "2026-10-16");
+  const c = await photos.compare("2026-09-18", "2026-10-16");
   assert.deepEqual([c.waistCm, c.armCm, c.weeks], [-1, 0.5, 4]);
   assert.ok(c.trendKg < 0);
-  assert.throws(() => photos.compare("2026-10-16", "2026-09-18"), { message: "invalid_range" });
-  photos.removeSession(l.sessions[0].id);
-  assert.equal(photos.list().sessions.length, 1);
+  await assert.rejects(async () => await photos.compare("2026-10-16", "2026-09-18"), { message: "invalid_range" });
+  await photos.removeSession(l.sessions[0].id);
+  assert.equal((await photos.list()).sessions.length, 1);
   assert.equal(readdirSync(dir).length, 1);
 });

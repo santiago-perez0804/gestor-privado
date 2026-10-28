@@ -36,8 +36,8 @@ export function cleanOuting(input, { partial = false } = {}) {
   return out;
 }
 
-export function getOuting(id) {
-  return db.prepare("SELECT * FROM outings WHERE id = ?").get(id);
+export async function getOuting(id) {
+  return await db.prepare("SELECT * FROM outings WHERE id = ?").get(id);
 }
 
 export default function registerOutingsRoutes(app) {
@@ -71,8 +71,8 @@ export default function registerOutingsRoutes(app) {
   app.get("/api/outings/:id/expenses", handle((req) => outings.linked(Number(req.params.id))));
   app.get(
     "/api/outings/:id/expense-candidates",
-    handle((req) => {
-      const list = outings.candidates(Number(req.params.id));
+    handle(async (req) => {
+      const list = await outings.candidates(Number(req.params.id));
       if (!list) throw Object.assign(new Error("not_found"), { status: 404 });
       return list;
     })
@@ -82,44 +82,44 @@ export default function registerOutingsRoutes(app) {
 
   app.post(
     "/api/outings",
-    handle((req) => {
+    handle(async (req) => {
       const o = cleanOuting(req.body);
       const ts = nowIso();
-      const id = db
+      const id = (await db
         .prepare(
           `INSERT INTO outings (title, category, date, startTime, endTime, allDay, place, withWhom, notes, status, icon, source, createdAt, updatedAt)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'app', ?, ?)`
         )
-        .run(o.title, o.category ?? null, o.date, o.startTime ?? null, o.endTime ?? null, o.allDay ?? 1, o.place ?? null, o.withWhom ?? null, o.notes ?? null, o.status ?? "tentative", o.icon ?? null, ts, ts)
+        .run(o.title, o.category ?? null, o.date, o.startTime ?? null, o.endTime ?? null, o.allDay ?? 1, o.place ?? null, o.withWhom ?? null, o.notes ?? null, o.status ?? "tentative", o.icon ?? null, ts, ts))
         .lastInsertRowid;
-      google().scheduleSoon();
-      return getOuting(id);
+      google().scheduleSoon().catch(() => {});
+      return await getOuting(id);
     }, 201)
   );
 
   app.put(
     "/api/outings/:id",
-    handle((req) => {
-      const existing = getOuting(req.params.id);
+    handle(async (req) => {
+      const existing = await getOuting(req.params.id);
       if (!existing || existing.deletedAt) throw Object.assign(new Error("not_found"), { status: 404 });
       const patch = cleanOuting(req.body, { partial: true });
       const merged = { ...existing, ...patch };
-      db.prepare(
+      await db.prepare(
         `UPDATE outings SET title=?, category=?, date=?, startTime=?, endTime=?, allDay=?, place=?, withWhom=?, notes=?, status=?, icon=?, updatedAt=? WHERE id=?`
       ).run(merged.title, merged.category, merged.date, merged.startTime, merged.endTime, merged.allDay, merged.place, merged.withWhom, merged.notes, merged.status, merged.icon, nowIso(), existing.id);
-      google().scheduleSoon();
-      return getOuting(existing.id);
+      google().scheduleSoon().catch(() => {});
+      return await getOuting(existing.id);
     })
   );
 
   app.delete(
     "/api/outings/:id",
-    handle((req) => {
-      const existing = getOuting(req.params.id);
+    handle(async (req) => {
+      const existing = await getOuting(req.params.id);
       if (!existing) return;
-      if (existing.googleEventId) db.prepare("UPDATE outings SET deletedAt = ?, updatedAt = ? WHERE id = ?").run(nowIso(), nowIso(), existing.id);
-      else db.prepare("DELETE FROM outings WHERE id = ?").run(existing.id);
-      google().scheduleSoon();
+      if (existing.googleEventId) await db.prepare("UPDATE outings SET deletedAt = ?, updatedAt = ? WHERE id = ?").run(nowIso(), nowIso(), existing.id);
+      else await db.prepare("DELETE FROM outings WHERE id = ?").run(existing.id);
+      google().scheduleSoon().catch(() => {});
     })
   );
 }

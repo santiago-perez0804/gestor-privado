@@ -11,8 +11,10 @@
     "migrate:fisico": "node src/db/migrations/runFisicoV2.js"
   },
   "dependencies": {
+    "@electric-sql/pglite": "^0.5.12",
     "cors": "^2.8.5",
     "express": "^4.21.1",
-    "multer": "^2.4.0"
+    "multer": "^2.4.0",
+    "postgres": "^3.4.9"
   }
 }

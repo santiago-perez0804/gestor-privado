@@ -263,7 +263,7 @@ export function migrateFisicoV2(db, { backupsDir, publicPhotosDir, privatePhotos
         summary.routineExercisesRebuilt = true;
       }
       ensureColumns(db);
-      if (pending.oneTime) oneTimeSetup(db, ts, summary);
+      if (pending.oneTime) oneTimeSetup(db, ts, summary, pending.version);
       if (pending.measurements) migrateMeasurements(db, ts, summary);
       db.exec("COMMIT");
     } catch (err) {

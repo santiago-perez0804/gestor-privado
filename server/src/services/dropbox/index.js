@@ -1,6 +1,6 @@
 // KOReader por Dropbox: arma auth + archivos + importación y decide cuándo revisar
 // (al arrancar, cada 15 minutos y al abrir las pantallas de lectura si pasó un rato).
-import { db, importsDir } from "../../db/index.js";
+import { db } from "../../db/index.js";
 import { createLibrary } from "../ocio/library.js";
 import { createKoreaderSync } from "../ocio/koreaderSync.js";
 import { createDropboxAuth, createDropboxFiles, dropboxConfigured, dropboxConfig, getAccount, saveAccount, normalizePath } from "./client.js";
@@ -11,11 +11,11 @@ const STALE_MS = 2 * 60_000;
 function createKoreaderDropbox() {
   const auth = createDropboxAuth(db);
   const files = createDropboxFiles(auth.getAccessToken);
-  const engine = createKoreaderSync({ db, lib: createLibrary(db), files, importsDir });
+  const engine = createKoreaderSync({ db, lib: createLibrary(db), files });
   let running = null;
 
-  const connected = () => {
-    const a = getAccount(db);
+  const connected = async () => {
+    const a = await getAccount(db);
     return !!a?.refreshTokenEnc && a.status !== "revoked";
   };
 
@@ -29,34 +29,34 @@ function createKoreaderDropbox() {
   }
 
   /** Revisa solo si pasó un rato desde la última vez (lo llaman las pantallas al abrirse). */
-  function syncIfStale() {
-    const last = getAccount(db)?.lastCheckAt;
-    if (!connected() || (last && Date.now() - new Date(last).getTime() < STALE_MS)) return Promise.resolve({ changed: false, fresh: true });
+  async function syncIfStale() {
+    const last = (await getAccount(db))?.lastCheckAt;
+    if (!await connected() || (last && Date.now() - new Date(last).getTime() < STALE_MS)) return Promise.resolve({ changed: false, fresh: true });
     return sync();
   }
 
-  function start() {
-    if (connected()) setTimeout(() => sync().catch(() => {}), 8000);
-    setInterval(() => connected() && sync().catch(() => {}), CHECK_EVERY_MS).unref?.();
+  async function start() {
+    if (await connected()) setTimeout(() => sync().catch(() => {}), 8000);
+    setInterval(async () => await connected() && sync().catch(() => {}), CHECK_EVERY_MS).unref?.();
   }
 
-  function setPath(input) {
+  async function setPath(input) {
     // Otra ruta: se olvida el rev para que la próxima revisión baje el archivo nuevo.
-    saveAccount(db, { path: normalizePath(input), lastRev: null, lastError: null });
-    return status();
+    await saveAccount(db, { path: normalizePath(input), lastRev: null, lastError: null });
+    return await status();
   }
 
-  function status() {
-    const a = getAccount(db);
+  async function status() {
+    const a = await getAccount(db);
     return {
       configured: dropboxConfigured(),
       redirectUri: dropboxConfig().redirectUri,
-      connected: connected(),
+      connected: await connected(),
       needsReconnect: a?.status === "revoked",
       status: a?.status ?? "disconnected",
       email: a?.email ?? null,
       syncing: !!running,
-      ...engine.info(),
+      ...(await engine.info()),
     };
   }
 

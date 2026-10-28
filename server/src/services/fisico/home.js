@@ -10,39 +10,39 @@ import { getSettings, today } from "./common.js";
 import { toExercise } from "./exercises.js";
 
 export function createHome(db, { plans, workouts, body, records, measurements, photos, habits, history }) {
-  const exercisesById = () => new Map(db.prepare("SELECT * FROM exercises").all().map((r) => [r.id, toExercise(r)]));
+  const exercisesById = async () => new Map((await db.prepare("SELECT * FROM exercises").all()).map((r) => [r.id, toExercise(r)]));
 
   /** Racha de semanas cumplidas (con la agenda actual, desde que hay entrenos o empezó el plan). */
-  function streak(planId, schedule, t, threshold) {
-    const first = db.prepare("SELECT MIN(localDate) AS d FROM workout_sessions WHERE status = 'done'").get().d;
-    const start = plans.detail(planId).startDate;
+  async function streak(planId, schedule, t, threshold) {
+    const first = (await db.prepare("SELECT MIN(localDate) AS d FROM workout_sessions WHERE status = 'done'").get()).d;
+    const start = (await plans.detail(planId)).startDate;
     const since = [first, start].filter(Boolean).sort()[0];
     if (!since) return { weeks: 0, current: null };
     const weeks = [];
     for (let i = 1; i <= 52; i++) {
       const days = weekDays(addDays(t, -7 * i));
       if (days[6] < since) break;
-      const sessions = db.prepare("SELECT localDate, routineId FROM workout_sessions WHERE status = 'done' AND localDate BETWEEN ? AND ?").all(days[0], days[6]);
+      const sessions = await db.prepare("SELECT localDate, routineId FROM workout_sessions WHERE status = 'done' AND localDate BETWEEN ? AND ?").all(days[0], days[6]);
       const p = weekPlan({ days, schedule, sessions, today: addDays(days[6], 1) });
       weeks.push({ planned: p.planned, done: p.done });
     }
     return { weeks, threshold };
   }
 
-  function home() {
-    const settings = getSettings(db);
-    const t = today(db);
-    const planId = plans.activeId();
-    const plan = planId ? plans.detail(planId) : null;
-    const ex = exercisesById();
-    const week = workouts.week(t);
+  async function home() {
+    const settings = await getSettings(db);
+    const t = await today(db);
+    const planId = await plans.activeId();
+    const plan = planId ? await plans.detail(planId) : null;
+    const ex = await exercisesById();
+    const week = await workouts.week(t);
     const days = weekDays(t);
     const scheduleMap = plan ? Object.fromEntries(plan.schedule.map((d) => [d.weekday, d])) : {};
 
     // Semana y racha.
     let streakWeeks = 0;
     if (plan && week) {
-      const s = streak(plan.id, scheduleMap, t, settings.weekDoneThreshold);
+      const s = await streak(plan.id, scheduleMap, t, settings.weekDoneThreshold);
       streakWeeks = s.weeks ? weekStreak(s.weeks, { planned: week.planned, done: week.done }, settings.weekDoneThreshold) : 0;
     }
     const routineName = new Map((plan?.routines ?? []).map((r) => [r.id, r.name]));
@@ -79,7 +79,7 @@ export function createHome(db, { plans, workouts, body, records, measurements, p
     if (plan) {
       const items = new Map(plan.routines.map((r) => [r.id, r.items]));
       const planned = plannedVolume(plan.schedule.map((d) => d.routineId), items, ex);
-      const sets = db
+      const sets = await db
         .prepare("SELECT l.exerciseId, l.type, l.completedAt FROM set_logs l JOIN workout_sessions s ON s.id = l.sessionId WHERE s.status = 'done' AND s.localDate BETWEEN ? AND ?")
         .all(days[0], days[6]);
       const rows = weeklyVolume({ planned, done: doneVolume(sets, ex), range: settings.volumeRange, priorityMuscles: plan.priorityMuscles });
@@ -87,13 +87,13 @@ export function createHome(db, { plans, workouts, body, records, measurements, p
     }
 
     // Recomposición: últimas 4 semanas.
-    const weight = body.summary();
-    const zones = byZone(db.prepare("SELECT measuredOn, zone, valueCm FROM measurements").all());
+    const weight = await body.summary();
+    const zones = byZone(await db.prepare("SELECT measuredOn, zone, valueCm FROM measurements").all());
     const from = addDays(t, -28);
-    const perExercise = db
+    const perExercise = (await Promise.all((await db
       .prepare("SELECT DISTINCT l.exerciseId FROM set_logs l JOIN workout_sessions s ON s.id = l.sessionId WHERE s.status = 'done' AND s.localDate >= ?")
-      .all(addDays(t, -35))
-      .map(({ exerciseId }) => ({ exerciseId, sessions: history.progress(exerciseId, { isBodyweight: ex.get(exerciseId)?.isBodyweight }).map((h) => ({ date: h.date, total: h.total })) }));
+      .all(addDays(t, -35)))
+      .map(async ({ exerciseId }) => ({ exerciseId, sessions: (await history.progress(exerciseId, { isBodyweight: ex.get(exerciseId)?.isBodyweight })).map((h) => ({ date: h.date, total: h.total })) }))));
     const signals = recompositionSignals({
       weightChange: weight.rate?.change ?? null,
       weightPctPerWeek: weight.rate?.pctPerWeek ?? null,
@@ -103,8 +103,8 @@ export function createHome(db, { plans, workouts, body, records, measurements, p
       healthyRatePct: settings.healthyRatePct,
     });
 
-    const m = measurements.summary();
-    const ph = photos.list();
+    const m = await measurements.summary();
+    const ph = await photos.list();
     return {
       today: t,
       plan: plan && { id: plan.id, name: plan.name, currentWeek: plan.currentWeek, weeks: plan.weeks, isDeloadWeek: plan.isDeloadWeek },
@@ -126,13 +126,13 @@ export function createHome(db, { plans, workouts, body, records, measurements, p
         typoJumpKg: weight.typoJumpKg,
       },
       volume,
-      habits: habits.list(),
+      habits: await habits.list(),
       signals,
-      records: records.recent({ days: 21, limit: 3 }),
+      records: await records.recent({ days: 21, limit: 3 }),
       nextPhoto: ph.next,
       nextMeasurement: m.next,
-      daysSinceLastWorkout: (() => {
-        const last = db.prepare("SELECT MAX(localDate) AS d FROM workout_sessions WHERE status = 'done'").get().d;
+      daysSinceLastWorkout: await (async () => {
+        const last = (await db.prepare("SELECT MAX(localDate) AS d FROM workout_sessions WHERE status = 'done'").get()).d;
         return last ? daysBetween(last, t) : null;
       })(),
     };

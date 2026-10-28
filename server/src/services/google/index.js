@@ -13,17 +13,17 @@ function createGoogleService() {
   let running = null;
   let soonTimer = null;
 
-  const connected = () => {
-    const a = getAccount(db);
+  const connected = async () => {
+    const a = await getAccount(db);
     return !!a?.refreshTokenEnc && (a.status === "connected" || a.status === "error");
   };
 
   /** El calendario dedicado "Salidas" (se crea la primera vez). */
   async function ensureCalendar() {
-    const account = getAccount(db);
+    const account = await getAccount(db);
     if (account?.calendarId) return account;
     const cal = await client.createCalendar("Salidas");
-    return saveAccount(db, { calendarId: cal.id, calendarName: cal.summary, syncToken: null });
+    return await saveAccount(db, { calendarId: cal.id, calendarName: cal.summary, syncToken: null });
   }
 
   /** Sincroniza ya (si ya hay una en curso, devuelve esa misma). */
@@ -41,24 +41,24 @@ function createGoogleService() {
   }
 
   /** Después de un cambio local: espera un poco (por si vienen más) y sube. */
-  function scheduleSoon(ms = 3000) {
-    if (!connected()) return;
+  async function scheduleSoon(ms = 3000) {
+    if (!await connected()) return;
     clearTimeout(soonTimer);
     soonTimer = setTimeout(() => sync().catch(() => {}), ms);
   }
 
-  function start() {
-    if (connected()) setTimeout(() => sync().catch(() => {}), 5000);
-    setInterval(() => connected() && sync().catch(() => {}), SYNC_EVERY_MS).unref?.();
+  async function start() {
+    if (await connected()) setTimeout(() => sync().catch(() => {}), 5000);
+    setInterval(async () => await connected() && sync().catch(() => {}), SYNC_EVERY_MS).unref?.();
   }
 
-  function status() {
-    const a = getAccount(db);
+  async function status() {
+    const a = await getAccount(db);
     return {
       configured: googleConfigured(),
       redirectUri: googleConfig().redirectUri,
       status: a?.status ?? "disconnected",
-      connected: connected(),
+      connected: await connected(),
       needsReconnect: a?.status === "revoked",
       email: a?.email ?? null,
       calendarName: a?.calendarName ?? null,

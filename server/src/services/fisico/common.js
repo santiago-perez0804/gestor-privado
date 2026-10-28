@@ -19,14 +19,14 @@ export const parseJson = (text, fallback) => {
 const SETTINGS_KEY = "fisico.settings";
 
 /** Ajustes efectivos de Físico (los guardados encima de los por defecto). */
-export function getSettings(db) {
-  const raw = db.prepare("SELECT value FROM settings WHERE key = ?").get(SETTINGS_KEY)?.value;
+export async function getSettings(db) {
+  const raw = (await db.prepare("SELECT value FROM settings WHERE key = ?").get(SETTINGS_KEY))?.value;
   return mergeSettings(parseJson(raw, {}));
 }
 
 /** Guarda cambios de ajustes (solo claves conocidas) y devuelve los efectivos. */
-export function saveSettings(db, patch = {}) {
-  const current = parseJson(db.prepare("SELECT value FROM settings WHERE key = ?").get(SETTINGS_KEY)?.value, {});
+export async function saveSettings(db, patch = {}) {
+  const current = parseJson((await db.prepare("SELECT value FROM settings WHERE key = ?").get(SETTINGS_KEY))?.value, {});
   const next = { ...current };
   const defaults = mergeSettings({});
   for (const [k, v] of Object.entries(patch || {})) {
@@ -34,9 +34,9 @@ export function saveSettings(db, patch = {}) {
     next[k] = v && typeof v === "object" && !Array.isArray(v) ? { ...(current[k] || {}), ...v } : v;
   }
   if ("heightCm" in next && next.heightCm != null && !(Number(next.heightCm) > 50 && Number(next.heightCm) < 260)) throw bad("invalid_height");
-  db.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(SETTINGS_KEY, JSON.stringify(next));
-  return getSettings(db);
+  await db.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(SETTINGS_KEY, JSON.stringify(next));
+  return await getSettings(db);
 }
 
 /** Hoy en la zona horaria del usuario (no la del equipo). */
-export const today = (db) => localDate(new Date(), getSettings(db).timeZone);
+export const today = async (db) => localDate(new Date(), (await getSettings(db)).timeZone);

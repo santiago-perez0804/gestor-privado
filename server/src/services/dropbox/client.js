@@ -53,18 +53,18 @@ export function normalizePath(input) {
 }
 
 // ---------- cuenta (una sola fila) ----------
-export function getAccount(db) {
-  return db.prepare("SELECT * FROM dropbox_account WHERE id = 1").get() ?? null;
+export async function getAccount(db) {
+  return await db.prepare("SELECT * FROM dropbox_account WHERE id = 1").get() ?? null;
 }
 
-export function saveAccount(db, fields) {
-  const merged = { status: "disconnected", path: DEFAULT_PATH, ...getAccount(db), ...fields, updatedAt: nowIso() };
+export async function saveAccount(db, fields) {
+  const merged = { status: "disconnected", path: DEFAULT_PATH, ...await getAccount(db), ...fields, updatedAt: nowIso() };
   const cols = ["refreshTokenEnc", "email", "path", "lastRev", "lastSyncAt", "lastCheckAt", "lastError", "lastSummary", "status", "updatedAt"];
-  db.prepare(
+  await db.prepare(
     `INSERT INTO dropbox_account (id, ${cols.join(", ")}) VALUES (1, ${cols.map(() => "?").join(", ")})
      ON CONFLICT(id) DO UPDATE SET ${cols.map((c) => `${c} = excluded.${c}`).join(", ")}`
   ).run(...cols.map((c) => merged[c] ?? null));
-  return getAccount(db);
+  return await getAccount(db);
 }
 
 // ---------- OAuth ----------
@@ -114,26 +114,26 @@ export function createDropboxAuth(db, { fetchImpl = fetch } = {}) {
     const t = await tokenRequest({ code, grant_type: "authorization_code", redirect_uri: dropboxConfig().redirectUri });
     if (!t.refresh_token) throw new DropboxError(400, "Dropbox no devolvió un refresh token. Volvé a conectar.");
     access = { token: t.access_token, expiresAt: Date.now() + ((t.expires_in || 14_400) - 60) * 1000 };
-    return saveAccount(db, { refreshTokenEnc: encryptSecret(t.refresh_token), email: await currentEmail(t.access_token), status: "connected", lastError: null, lastRev: null });
+    return await saveAccount(db, { refreshTokenEnc: encryptSecret(t.refresh_token), email: await currentEmail(t.access_token), status: "connected", lastError: null, lastRev: null });
   }
 
   /** Token de acceso vigente (lo renueva con el refresh token si venció). */
   async function getAccessToken({ force = false } = {}) {
     if (!force && access && access.expiresAt > Date.now()) return access.token;
-    const account = getAccount(db);
+    const account = await getAccount(db);
     if (!account?.refreshTokenEnc) throw new DropboxError(401, "not_connected", "not_connected");
     try {
       const t = await tokenRequest({ refresh_token: decryptSecret(account.refreshTokenEnc), grant_type: "refresh_token" });
       access = { token: t.access_token, expiresAt: Date.now() + ((t.expires_in || 14_400) - 60) * 1000 };
       return access.token;
     } catch (err) {
-      if (err.code === "invalid_grant") saveAccount(db, { status: "revoked", lastError: "Dropbox revocó el acceso: hay que reconectar." });
+      if (err.code === "invalid_grant") await saveAccount(db, { status: "revoked", lastError: "Dropbox revocó el acceso: hay que reconectar." });
       throw err;
     }
   }
 
   async function disconnect() {
-    const account = getAccount(db);
+    const account = await getAccount(db);
     if (account?.refreshTokenEnc) {
       try {
         const token = await getAccessToken();
@@ -143,7 +143,7 @@ export function createDropboxAuth(db, { fetchImpl = fetch } = {}) {
       }
     }
     access = null;
-    saveAccount(db, { refreshTokenEnc: null, email: null, status: "disconnected", lastRev: null, lastError: null });
+    await saveAccount(db, { refreshTokenEnc: null, email: null, status: "disconnected", lastRev: null, lastError: null });
   }
 
   return { authUrl, handleCallback, getAccessToken, disconnect };

@@ -1,9 +1,9 @@
 // Utilidades para las rutas de Express.
 
-/** Envuelve un handler: responde JSON y traduce errores de dominio (con status) a respuestas claras. */
-export const handle = (fn, okStatus = 200) => (req, res, next) => {
+/** Envuelve un handler (sincrónico o async): responde JSON y traduce errores de dominio (con status) a respuestas claras. */
+export const handle = (fn, okStatus = 200) => async (req, res, next) => {
   try {
-    const out = fn(req, res);
+    const out = await fn(req, res);
     if (res.headersSent) return;
     if (out === undefined) res.status(204).end();
     else res.status(okStatus).json(out);

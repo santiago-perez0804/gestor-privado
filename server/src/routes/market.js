@@ -21,16 +21,16 @@ async function getJson(path) {
 
 const isoDate = (ms) => new Date(ms).toISOString().slice(0, 10);
 
-function saveSetting(key, value) {
-  db.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(key, String(value));
+async function saveSetting(key, value) {
+  await db.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(key, String(value));
 }
 
 async function inflation() {
   const rows = await getJson("/indices/inflacion");
   const last = rows.slice(-12);
   // Queda guardada para que toda la app la use sin pedir datos de mercado (ver inflationFromSettings).
-  saveSetting("inflation_auto_pct", rows[rows.length - 1].valor);
-  saveSetting("inflation_auto_month", rows[rows.length - 1].fecha);
+  await saveSetting("inflation_auto_pct", rows[rows.length - 1].valor);
+  await saveSetting("inflation_auto_month", rows[rows.length - 1].fecha);
   const yearly = last.reduce((acc, r) => acc * (1 + r.valor / 100), 1) - 1;
   return { latest: rows[rows.length - 1], last12: last, yearlyPct: +(yearly * 100).toFixed(1) };
 }
@@ -91,7 +91,7 @@ async function load() {
 }
 
 /** Precarga en segundo plano (actualiza la inflación guardada). */
-export function prefetchMarket() {
+export async function prefetchMarket() {
   load()
     .then((data) => {
       if (data.inflation || data.plazoFijo) cache = { data, at: Date.now() };

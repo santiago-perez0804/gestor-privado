@@ -111,7 +111,7 @@ before(async () => {
   await startDropboxFake();
   server = spawn(process.execPath, ["src/index.js"], {
     cwd: SERVER_DIR,
-    env: { ...process.env, DATA_DIR: dataDir, PORT: String(PORT), ENV_FILE: join(dataDir, "no.env"), AUTH_USER: "", AUTH_PASS: "", GOOGLE_CLIENT_ID: "", GOOGLE_CLIENT_SECRET: "", TMDB_READ_TOKEN: "", TMDB_API_KEY: "", RAWG_API_KEY: "", GOOGLE_BOOKS_API_KEY: "",
+    env: { ...process.env, DATA_DIR: dataDir, PORT: String(PORT), ENV_FILE: join(dataDir, "no.env"), AUTH_USER: "", AUTH_PASS: "", DATABASE_URL: "", SUPABASE_URL: "", SUPABASE_SERVICE_ROLE_KEY: "", GOOGLE_CLIENT_ID: "", GOOGLE_CLIENT_SECRET: "", TMDB_READ_TOKEN: "", TMDB_API_KEY: "", RAWG_API_KEY: "", GOOGLE_BOOKS_API_KEY: "",
       TOKEN_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString("base64"), DROPBOX_APP_KEY: "it-key", DROPBOX_APP_SECRET: "it-secret",
       DROPBOX_API_URL: `http://127.0.0.1:${dropboxFake.port}`, DROPBOX_CONTENT_URL: `http://127.0.0.1:${dropboxFake.port}` },
     stdio: ["ignore", "pipe", "pipe"],

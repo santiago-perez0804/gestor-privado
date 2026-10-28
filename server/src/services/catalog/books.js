@@ -73,7 +73,7 @@ export function normalizeGoogleBook(item) {
 }
 
 async function searchOpenLibrary(cache, query) {
-  return cached(cache, `ol:search:es:${query.toLowerCase()}`, 7 * DAY, async () => {
+  return await cached(cache, `ol:search:es:${query.toLowerCase()}`, 7 * DAY, async () => {
     const url = new URL("https://openlibrary.org/search.json");
     url.searchParams.set("q", query);
     url.searchParams.set("limit", "10");
@@ -87,7 +87,7 @@ async function searchOpenLibrary(cache, query) {
 
 async function searchGoogleBooks(cache, query) {
   if (!googleBooksConfigured() || Date.now() < googlePausedUntil) return [];
-  return cached(cache, `gb:search:${query.toLowerCase()}`, 7 * DAY, async () => {
+  return await cached(cache, `gb:search:${query.toLowerCase()}`, 7 * DAY, async () => {
     const url = new URL("https://www.googleapis.com/books/v1/volumes");
     url.searchParams.set("q", query);
     url.searchParams.set("maxResults", "10");

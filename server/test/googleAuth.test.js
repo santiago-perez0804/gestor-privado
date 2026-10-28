@@ -1,5 +1,6 @@
 import { test, before } from "node:test";
 import assert from "node:assert/strict";
+import { testDb } from "./helpers/pgdb.js";
 import { DatabaseSync } from "node:sqlite";
 import { randomBytes } from "node:crypto";
 import { ocioSchema } from "../src/db/schema/ocio.js";
@@ -16,15 +17,14 @@ before(() => {
 const jsonResponse = (status, body, headers = {}) => ({ ok: status >= 200 && status < 300, status, json: async () => body, headers: { get: (h) => headers[h.toLowerCase()] ?? null } });
 const idToken = (email) => `x.${Buffer.from(JSON.stringify({ email })).toString("base64url")}.y`;
 
-function freshDb() {
-  const db = new DatabaseSync(":memory:");
-  db.exec(ocioSchema);
+async function freshDb() {
+  const db = await testDb();
   return db;
 }
 
-test("arma la URL de consentimiento con scope mínimo, refresh token y state", () => {
+test("arma la URL de consentimiento con scope mínimo, refresh token y state", async () => {
   assert.equal(googleConfigured(), true);
-  const auth = createGoogleAuth(freshDb());
+  const auth = createGoogleAuth(await freshDb());
   const url = new URL(auth.authUrl());
   assert.equal(url.origin + url.pathname, "https://accounts.google.com/o/oauth2/v2/auth");
   assert.equal(url.searchParams.get("access_type"), "offline");
@@ -34,7 +34,7 @@ test("arma la URL de consentimiento con scope mínimo, refresh token y state", (
 });
 
 test("callback: rechaza un state desconocido y guarda el refresh token cifrado", async () => {
-  const db = freshDb();
+  const db = await freshDb();
   const calls = [];
   const fetchImpl = async (url, opts) => {
     calls.push([String(url), opts?.body?.toString()]);
@@ -52,7 +52,7 @@ test("callback: rechaza un state desconocido y guarda el refresh token cifrado",
 });
 
 test("renueva el token de acceso y, si Google lo revocó, marca la cuenta para reconectar", async () => {
-  const db = freshDb();
+  const db = await freshDb();
   let mode = "callback";
   const fetchImpl = async () => {
     if (mode === "callback") return jsonResponse(200, { access_token: "a1", refresh_token: "r1", expires_in: 1, id_token: idToken("yo@gmail.com") });
@@ -66,7 +66,7 @@ test("renueva el token de acceso y, si Google lo revocó, marca la cuenta para r
   assert.equal(await auth.getAccessToken(), "a2", "y lo reusa mientras sirva");
   mode = "revoked";
   await assert.rejects(auth.getAccessToken({ force: true }), (e) => e.code === "invalid_grant");
-  assert.equal(getAccount(db).status, "revoked");
+  assert.equal((await getAccount(db)).status, "revoked");
 });
 
 test("cliente de Calendar: reintenta con token nuevo ante 401 y propaga el 412", async () => {

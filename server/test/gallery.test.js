@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { testDb } from "./helpers/pgdb.js";
 import { DatabaseSync } from "node:sqlite";
 import { mkdtempSync, existsSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
@@ -54,18 +55,16 @@ test("atril: solo las marcadas, en orden, favoritas y aleatorio estable", () => 
   assert.deepEqual(easelSettings({ interval: "3h", order: "x", showOnHome: "0" }), { interval: "15s", order: "chronological", showOnHome: false });
 });
 
-function setup() {
-  const db = new DatabaseSync(":memory:");
-  db.exec(sharedSchema);
-  db.exec(ocioSchema);
+async function setup() {
+  const db = await testDb();
   const dir = mkdtempSync(join(tmpdir(), "galeria-"));
   return { db, dir, gallery: createGallery(db, dir) };
 }
 
-test("galería: alta, edición, código único y borrado con sus archivos", (t) => {
-  const { gallery, dir } = setup();
+test("galería: alta, edición, código único y borrado con sus archivos", async (t) => {
+  const { gallery, dir } = await setup();
   t.after(() => rmSync(dir, { recursive: true, force: true }));
-  const a = gallery.create({ image: PNG_1x1, thumb: PNG_1x1, originalName: "rana_pixel.png", fields: { technique: "Aseprite", isFavorite: "true" } });
+  const a = await gallery.create({ image: PNG_1x1, thumb: PNG_1x1, originalName: "rana_pixel.png", fields: { technique: "Aseprite", isFavorite: "true" } });
   assert.equal(a.title, "rana pixel", "título a partir del nombre del archivo");
   assert.equal(a.inventoryCode, "PX-001");
   assert.equal(a.sizeLabel, "1 × 1 px");
@@ -75,30 +74,30 @@ test("galería: alta, edición, código único y borrado con sus archivos", (t) 
   assert.match(a.thumbUrl, /\.thumb\.png$/);
   assert.equal(readdirSync(dir).length, 2);
 
-  const b = gallery.create({ image: GIF_1x1, fields: { title: "Atardecer", createdOn: "2026-01-02" } });
+  const b = await gallery.create({ image: GIF_1x1, fields: { title: "Atardecer", createdOn: "2026-01-02" } });
   assert.equal(b.inventoryCode, "PX-002");
   assert.equal(b.thumbUrl, b.url, "sin miniatura usa el original");
-  assert.throws(() => gallery.create({ image: JPEG_64x32, thumb: JPEG_64x32 }), { message: "thumb_must_be_png" });
-  assert.throws(() => gallery.update(b.id, { inventoryCode: "px-001" }), { message: "inventory_code_taken" });
-  assert.equal(gallery.update(b.id, { inventoryCode: "" }).inventoryCode, "PX-002", "vaciar el código no lo borra");
-  assert.equal(gallery.update(b.id, { showOnEasel: false, description: "  " }).showOnEasel, false);
-  assert.equal(gallery.get(b.id).description, null);
-  assert.throws(() => gallery.update(b.id, { title: "" }), { message: "title_required" });
+  await assert.rejects(async () => await gallery.create({ image: JPEG_64x32, thumb: JPEG_64x32 }), { message: "thumb_must_be_png" });
+  await assert.rejects(async () => await gallery.update(b.id, { inventoryCode: "px-001" }), { message: "inventory_code_taken" });
+  assert.equal((await gallery.update(b.id, { inventoryCode: "" })).inventoryCode, "PX-002", "vaciar el código no lo borra");
+  assert.equal((await gallery.update(b.id, { showOnEasel: false, description: "  " })).showOnEasel, false);
+  assert.equal((await gallery.get(b.id)).description, null);
+  await assert.rejects(async () => await gallery.update(b.id, { title: "" }), { message: "title_required" });
 
-  gallery.remove(a.id);
-  assert.equal(gallery.list().length, 1);
+  await gallery.remove(a.id);
+  assert.equal((await gallery.list()).length, 1);
   assert.equal(readdirSync(dir).length, 1, "borró la imagen y la miniatura");
-  assert.throws(() => gallery.get(a.id), { message: "not_found" });
+  await assert.rejects(async () => await gallery.get(a.id), { message: "not_found" });
 });
 
-test("atril: configuración guardada y secuencia", (t) => {
-  const { gallery, dir } = setup();
+test("atril: configuración guardada y secuencia", async (t) => {
+  const { gallery, dir } = await setup();
   t.after(() => rmSync(dir, { recursive: true, force: true }));
-  assert.deepEqual(gallery.getEaselSettings(), { interval: "15s", order: "chronological", showOnHome: true });
-  gallery.create({ image: PNG_1x1, fields: { title: "Uno", createdOn: "2026-01-01" } });
-  gallery.create({ image: PNG_1x1, fields: { title: "Dos", createdOn: "2026-02-01", isFavorite: true } });
-  assert.deepEqual(gallery.setEaselSettings({ interval: "daily", order: "favorites", showOnHome: false }), { interval: "daily", order: "favorites", showOnHome: false });
-  const e = gallery.easel("2026-10-26");
+  assert.deepEqual(await gallery.getEaselSettings(), { interval: "15s", order: "chronological", showOnHome: true });
+  await gallery.create({ image: PNG_1x1, fields: { title: "Uno", createdOn: "2026-01-01" } });
+  await gallery.create({ image: PNG_1x1, fields: { title: "Dos", createdOn: "2026-02-01", isFavorite: true } });
+  assert.deepEqual(await gallery.setEaselSettings({ interval: "daily", order: "favorites", showOnHome: false }), { interval: "daily", order: "favorites", showOnHome: false });
+  const e = await gallery.easel("2026-10-26");
   assert.deepEqual(e.items.map((i) => i.title), ["Dos"]);
   assert.equal(e.startIndex, 0);
   assert.equal(e.total, 2);

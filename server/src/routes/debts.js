@@ -1,27 +1,27 @@
 import { db, nowIso } from "../db/index.js";
 
-const getDebt = (id) => db.prepare("SELECT * FROM debts WHERE id = ?").get(id);
+const getDebt = async (id) => await db.prepare("SELECT * FROM debts WHERE id = ?").get(id);
 
 // Queda saldada cuando lo pagado cubre el total; si se baja el pago vuelve a pendiente.
-function settle(id) {
-  const debt = getDebt(id);
+async function settle(id) {
+  const debt = await getDebt(id);
   const settledAt = debt.paidAmount >= debt.amount ? debt.settledAt || nowIso() : null;
-  db.prepare("UPDATE debts SET settledAt = ? WHERE id = ?").run(settledAt, id);
-  return getDebt(id);
+  await db.prepare("UPDATE debts SET settledAt = ? WHERE id = ?").run(settledAt, id);
+  return await getDebt(id);
 }
 
 export default function registerDebtsRoutes(app) {
-  app.get("/api/debts", (req, res) => {
+  app.get("/api/debts", async (req, res) => {
     res.json(
-      db.prepare("SELECT * FROM debts ORDER BY settledAt IS NOT NULL, dueDate IS NULL, dueDate ASC, createdAt DESC").all()
+      await db.prepare("SELECT * FROM debts ORDER BY settledAt IS NOT NULL, dueDate IS NULL, dueDate ASC, createdAt DESC").all()
     );
   });
 
-  app.post("/api/debts", (req, res) => {
+  app.post("/api/debts", async (req, res) => {
     const { title, person, direction, amount, currency, dueDate, notes } = req.body;
     if (!title || !(Number(amount) > 0)) return res.status(400).json({ error: "title_amount_required" });
     const ts = nowIso();
-    const info = db
+    const info = await db
       .prepare(
         `INSERT INTO debts (title, person, direction, amount, paidAmount, currency, dueDate, notes, settledAt, createdAt, updatedAt)
          VALUES (?, ?, ?, ?, 0, ?, ?, ?, NULL, ?, ?)`
@@ -37,11 +37,11 @@ export default function registerDebtsRoutes(app) {
         ts,
         ts
       );
-    res.status(201).json(getDebt(info.lastInsertRowid));
+    res.status(201).json(await getDebt(info.lastInsertRowid));
   });
 
-  app.put("/api/debts/:id", (req, res) => {
-    const existing = getDebt(req.params.id);
+  app.put("/api/debts/:id", async (req, res) => {
+    const existing = await getDebt(req.params.id);
     if (!existing) return res.status(404).json({ error: "not_found" });
     const b = req.body;
     const merged = {
@@ -54,7 +54,7 @@ export default function registerDebtsRoutes(app) {
       dueDate: b.dueDate !== undefined ? b.dueDate || null : existing.dueDate,
       notes: b.notes !== undefined ? b.notes || null : existing.notes,
     };
-    db.prepare(
+    await db.prepare(
       "UPDATE debts SET title=?, person=?, direction=?, amount=?, paidAmount=?, currency=?, dueDate=?, notes=?, updatedAt=? WHERE id=?"
     ).run(
       merged.title,
@@ -68,22 +68,22 @@ export default function registerDebtsRoutes(app) {
       nowIso(),
       req.params.id
     );
-    res.json(settle(req.params.id));
+    res.json(await settle(req.params.id));
   });
 
   // Pago parcial o total: suma al acumulado (sin pasarse del total).
-  app.post("/api/debts/:id/payments", (req, res) => {
-    const existing = getDebt(req.params.id);
+  app.post("/api/debts/:id/payments", async (req, res) => {
+    const existing = await getDebt(req.params.id);
     if (!existing) return res.status(404).json({ error: "not_found" });
     const amount = Number(req.body.amount);
     if (!(amount > 0)) return res.status(400).json({ error: "amount_required" });
     const paid = Math.min(existing.amount, existing.paidAmount + amount);
-    db.prepare("UPDATE debts SET paidAmount = ?, updatedAt = ? WHERE id = ?").run(paid, nowIso(), req.params.id);
-    res.json(settle(req.params.id));
+    await db.prepare("UPDATE debts SET paidAmount = ?, updatedAt = ? WHERE id = ?").run(paid, nowIso(), req.params.id);
+    res.json(await settle(req.params.id));
   });
 
-  app.delete("/api/debts/:id", (req, res) => {
-    db.prepare("DELETE FROM debts WHERE id = ?").run(req.params.id);
+  app.delete("/api/debts/:id", async (req, res) => {
+    await db.prepare("DELETE FROM debts WHERE id = ?").run(req.params.id);
     res.status(204).end();
   });
 }

@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { testDb } from "./helpers/pgdb.js";
 import { DatabaseSync } from "node:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -44,15 +45,11 @@ function makeKoreaderFile(dir, extraRows = []) {
   return path;
 }
 
-function library() {
-  const db = new DatabaseSync(":memory:");
-  db.exec("PRAGMA foreign_keys = ON");
-  db.exec(gastosSchema);
-  db.exec(ocioSchema);
-  migrateOcioV2(db);
+async function library() {
+  const db = await testDb();
   const lib = createLibrary(db);
-  const orwell = lib.add({ work: { type: "book", title: "1984", creators: ["George Orwell"] }, entry: { status: "done" } }).item;
-  const huxley = lib.add({ work: { type: "book", title: "Un mundo feliz", originalTitle: "Brave New World" }, entry: { status: "in_progress" } }).item;
+  const orwell = (await lib.add({ work: { type: "book", title: "1984", creators: ["George Orwell"] }, entry: { status: "done" } })).item;
+  const huxley = (await lib.add({ work: { type: "book", title: "Un mundo feliz", originalTitle: "Brave New World" }, entry: { status: "in_progress" } })).item;
   return { db, lib, orwell, huxley };
 }
 
@@ -91,10 +88,10 @@ test("inspecciona el esquema y avisa qué falta (no asume columnas)", () => {
   }
 });
 
-test("lee libros con sus sesiones y los vincula con la biblioteca", () => {
+test("lee libros con sus sesiones y los vincula con la biblioteca", async () => {
   const dir = mkdtempSync(join(tmpdir(), "kor-"));
   try {
-    const { db, orwell, huxley } = library();
+    const { db, orwell, huxley } = await library();
     const { books } = readKoreader(makeKoreaderFile(dir));
     assert.deepEqual(books.map((b) => b.title), ["1984", "Un mundo feliz", "El nombre del viento"], "el libro sin lectura no aparece");
     const b1984 = books[0];
@@ -102,7 +99,7 @@ test("lee libros con sus sesiones y los vincula con la biblioteca", () => {
     assert.equal(b1984.totalSeconds, 5 * 55 + 3 * 60);
     assert.equal(b1984.pagesRead, 8);
     assert.equal(b1984.key, "md5:aaa111");
-    const matched = matchBooks(db, books);
+    const matched = await matchBooks(db, books);
     assert.deepEqual(matched[0].match, { workId: orwell.workId, confidence: "exact" });
     assert.deepEqual(matched[1].match, { workId: huxley.workId, confidence: "exact" }, "sin autor en la biblioteca, el título alcanza");
     assert.equal(matched[2].match, null, "no está: hay que elegir");
@@ -111,19 +108,19 @@ test("lee libros con sus sesiones y los vincula con la biblioteca", () => {
   }
 });
 
-test("importar es idempotente, extiende sesiones y recuerda el vínculo", () => {
+test("importar es idempotente, extiende sesiones y recuerda el vínculo", async () => {
   const dir = mkdtempSync(join(tmpdir(), "kor-"));
   try {
-    const { db, lib, orwell, huxley } = library();
-    const books = matchBooks(db, readKoreader(makeKoreaderFile(dir)).books);
+    const { db, lib, orwell, huxley } = await library();
+    const books = await matchBooks(db, readKoreader(makeKoreaderFile(dir)).books);
     const mapping = Object.fromEntries(books.map((b) => [b.key, b.match ? b.match.workId : "new"]));
-    const first = importKoreader(db, lib, books, mapping);
+    const first = await importKoreader(db, lib, books, mapping);
     assert.deepEqual(first, { books: 3, created: 1, skipped: 0, sessionsNew: 4, sessionsUpdated: 0 });
-    assert.ok(lib.list({ q: "rothfuss" }).length === 1, "se creó el libro que faltaba");
-    assert.equal(lib.item(huxley.id).currentPass.startedAt, "2026-03-04", "completa la fecha de inicio que faltaba");
+    assert.ok((await lib.list({ q: "rothfuss" })).length === 1, "se creó el libro que faltaba");
+    assert.equal((await lib.item(huxley.id)).currentPass.startedAt, "2026-03-04", "completa la fecha de inicio que faltaba");
 
     // El mismo archivo otra vez: nada nuevo.
-    const again = importKoreader(db, lib, matchBooks(db, readKoreader(makeKoreaderFile(dir)).books), mapping);
+    const again = await importKoreader(db, lib, await matchBooks(db, readKoreader(makeKoreaderFile(dir)).books), mapping);
     assert.equal(again.sessionsNew, 0);
     assert.equal(again.sessionsUpdated, 0);
     assert.equal(again.created, 0, "el libro creado ya quedó vinculado");
@@ -133,12 +130,12 @@ test("importar es idempotente, extiende sesiones y recuerda el vínculo", () => 
       [1, 9, t0 + 86400 + 3 * MIN, 60, 328],
       [1, 10, t0 + 5 * 86400, 60, 328],
     ]);
-    const relinked = matchBooks(db, readKoreader(newer).books);
+    const relinked = await matchBooks(db, readKoreader(newer).books);
     assert.equal(relinked[0].match.confidence, "linked");
-    const third = importKoreader(db, lib, relinked, mapping);
+    const third = await importKoreader(db, lib, relinked, mapping);
     assert.equal(third.sessionsNew, 1);
     assert.equal(third.sessionsUpdated, 1);
-    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM reading_sessions WHERE workId = ?").get(orwell.workId).n, 3);
+    assert.equal((await db.prepare("SELECT COUNT(*) AS n FROM reading_sessions WHERE workId = ?").get(orwell.workId)).n, 3);
     assert.equal(bookKey({ title: "Sin md5", authors: "X" }), "t:sin md5|x");
   } finally {
     rmSync(dir, { recursive: true, force: true });

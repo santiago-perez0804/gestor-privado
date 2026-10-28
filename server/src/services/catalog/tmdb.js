@@ -19,13 +19,13 @@ const TMDB_GENRES = {
 
 export const tmdbConfigured = () => !!(process.env.TMDB_READ_TOKEN || process.env.TMDB_API_KEY);
 
-function request(path, params = {}) {
+async function request(path, params = {}) {
   const url = new URL(BASE + path);
   for (const [k, v] of Object.entries(params)) if (v != null) url.searchParams.set(k, v);
   const headers = {};
   if (process.env.TMDB_READ_TOKEN) headers.Authorization = `Bearer ${process.env.TMDB_READ_TOKEN}`;
   else url.searchParams.set("api_key", process.env.TMDB_API_KEY);
-  return fetchJson(url, { source: "tmdb", limiter, headers, retries: 2 });
+  return await fetchJson(url, { source: "tmdb", limiter, headers, retries: 2 });
 }
 
 const yearOf = (date) => (date ? Number(String(date).slice(0, 4)) || null : null);
@@ -55,9 +55,9 @@ export function normalizeTmdb(raw, type, details = null) {
 }
 
 /** Detalle (director o creadores, duración, temporadas). Cacheado 30 días. */
-export function tmdbDetails(cache, type, id) {
+export async function tmdbDetails(cache, type, id) {
   const kind = type === "movie" ? "movie" : "tv";
-  return cached(cache, `tmdb:details:${kind}:${id}`, 30 * DAY, async () => {
+  return await cached(cache, `tmdb:details:${kind}:${id}`, 30 * DAY, async () => {
     let d = await request(`/${kind}/${id}`, { language: "es-AR", append_to_response: kind === "movie" ? "credits" : undefined });
     if (!d.overview) {
       const es = await request(`/${kind}/${id}`, { language: "es-ES" }).catch(() => null);
@@ -77,5 +77,5 @@ export async function tmdbSearch(cache, type, query, { enrich = 5 } = {}) {
     const r = await request(`/search/${kind}`, { query, language: "es-AR", include_adult: "false" });
     return (r.results || []).slice(0, 12).map((x) => normalizeTmdb(x, type));
   });
-  return Promise.all(results.map((r, i) => (i < enrich ? tmdbDetails(cache, type, r.externalId).catch(() => r) : r)));
+  return Promise.all(results.map(async (r, i) => (i < enrich ? tmdbDetails(cache, type, r.externalId).catch(() => r) : r)));
 }

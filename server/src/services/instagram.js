@@ -47,8 +47,8 @@ export function clearInstagramCache(token) {
   }
 }
 
-export function getProfile(token, { fresh = false } = {}) {
-  return igGet(
+export async function getProfile(token, { fresh = false } = {}) {
+  return await igGet(
     "/me",
     {
       fields: "user_id,username,name,profile_picture_url,followers_count,follows_count,media_count",

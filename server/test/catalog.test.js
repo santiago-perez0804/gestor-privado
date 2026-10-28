@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { testDb } from "./helpers/pgdb.js";
 import { DatabaseSync } from "node:sqlite";
 import { mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -62,8 +63,7 @@ test("el limitador hace un pedido por vez con espacio mínimo entre pedidos", as
 });
 
 test("caché: sirve lo guardado y, sin red, lo vencido", async () => {
-  const db = new DatabaseSync(":memory:");
-  db.exec(ocioSchema);
+  const db = await testDb();
   const cache = createCache(db);
   let calls = 0;
   const load = async () => (++calls, { v: calls });

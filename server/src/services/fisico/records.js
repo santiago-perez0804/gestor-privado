@@ -10,8 +10,8 @@ import { toExercise } from "./exercises.js";
 export const CHANGE_WEEKS = 6;
 
 export function createRecords(db, { history, plans }) {
-  const exercisesWithData = () =>
-    db
+  const exercisesWithData = async () =>
+    await db
       .prepare(
         `SELECT e.*, COUNT(DISTINCT l.sessionId) AS sessions, MAX(s.startedAt) AS lastAt
          FROM exercises e JOIN set_logs l ON l.exerciseId = e.id JOIN workout_sessions s ON s.id = l.sessionId
@@ -20,16 +20,16 @@ export function createRecords(db, { history, plans }) {
       )
       .all();
 
-  const priority = () => {
-    const id = plans.activeId();
-    return id ? plans.detail(id).priorityMuscles : [];
+  const priority = async () => {
+    const id = await plans.activeId();
+    return id ? (await plans.detail(id)).priorityMuscles : [];
   };
 
-  function summaryOf(row, prio, t) {
+  async function summaryOf(row, prio, t) {
     const exercise = toExercise(row);
-    const hist = history.progress(exercise.id, { isBodyweight: exercise.isBodyweight });
+    const hist = await history.progress(exercise.id, { isBodyweight: exercise.isBodyweight });
     const recent = hist.filter((h) => h.date >= addDays(t, -7 * CHANGE_WEEKS));
-    const best = history.records(exercise.id, { isBodyweight: exercise.isBodyweight }).bestE1rm;
+    const best = (await history.records(exercise.id, { isBodyweight: exercise.isBodyweight })).bestE1rm;
     const primary = exercise.muscles.find((m) => m.role === "primary")?.muscle ?? null;
     return {
       exerciseId: exercise.id,
@@ -46,23 +46,23 @@ export function createRecords(db, { history, plans }) {
   }
 
   /** Ejercicios con series registradas: los prioritarios primero, después por uso reciente. */
-  function list() {
-    const prio = priority();
-    const t = today(db);
-    return exercisesWithData()
-      .map((row) => summaryOf(row, prio, t))
+  async function list() {
+    const prio = await priority();
+    const t = await today(db);
+    return (await Promise.all((await exercisesWithData())
+      .map(async (row) => await summaryOf(row, prio, t))))
       .sort((a, b) => Number(b.priority) - Number(a.priority) || String(b.lastDate).localeCompare(String(a.lastDate)));
   }
 
   /** Detalle de un ejercicio. */
-  function detail(exerciseId) {
-    const row = exercisesWithData().find((r) => r.id === Number(exerciseId));
+  async function detail(exerciseId) {
+    const row = (await exercisesWithData()).find((r) => r.id === Number(exerciseId));
     if (!row) return null;
     const exercise = toExercise(row);
-    const t = today(db);
-    const base = summaryOf(row, priority(), t);
-    const hist = history.progress(exercise.id, { isBodyweight: exercise.isBodyweight });
-    const recs = history.records(exercise.id, { isBodyweight: exercise.isBodyweight });
+    const t = await today(db);
+    const base = await summaryOf(row, await priority(), t);
+    const hist = await history.progress(exercise.id, { isBodyweight: exercise.isBodyweight });
+    const recs = await history.records(exercise.id, { isBodyweight: exercise.isBodyweight });
     const bestSet = recs.bestE1rm ? { weightKg: recs.bestE1rm.weightKg, reps: recs.bestE1rm.reps, date: recs.bestE1rm.date } : null;
     // Récord por repeticiones: alrededor del rango que usás (las reps registradas, de menos a más).
     const reps = Object.keys(recs.byReps).map(Number).sort((a, b) => a - b);
@@ -84,12 +84,12 @@ export function createRecords(db, { history, plans }) {
   }
 
   /** Récords de los últimos días (para el Inicio): el mejor 1RM de esa sesión cuando superó al anterior. */
-  function recent({ days = 21, limit = 5 } = {}) {
-    const from = addDays(today(db), -days);
+  async function recent({ days = 21, limit = 5 } = {}) {
+    const from = addDays(await today(db), -days);
     const out = [];
-    for (const row of exercisesWithData()) {
+    for (const row of await exercisesWithData()) {
       const exercise = toExercise(row);
-      const hist = history.progress(exercise.id, { isBodyweight: exercise.isBodyweight });
+      const hist = await history.progress(exercise.id, { isBodyweight: exercise.isBodyweight });
       hist.forEach((h, i) => {
         if (i === 0 || !h.record || h.date < from) return;
         const top = h.sets.reduce((best, s) => (!best || (s.weightKg ?? 0) * (1 + s.reps / 30) > (best.weightKg ?? 0) * (1 + best.reps / 30) ? s : best), null);

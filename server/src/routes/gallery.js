@@ -1,7 +1,7 @@
 // Galería de pixel art y atril. Las imágenes se suben como multipart (campo "image" y, opcional,
 // "thumb": la miniatura que arma el navegador) y se validan por contenido en el servicio.
 import multer from "multer";
-import { db, artworksDir } from "../db/index.js";
+import { db } from "../db/index.js";
 import { handle } from "../lib/http.js";
 import { createGallery } from "../services/ocio/gallery.js";
 import { MAX_IMAGE_BYTES } from "../lib/ocio/images.js";
@@ -20,7 +20,7 @@ const withUpload = (req, res, next) =>
   });
 
 export default function registerGalleryRoutes(app) {
-  const gallery = createGallery(db, artworksDir);
+  const gallery = createGallery(db);
 
   app.get("/api/ocio/artworks", handle((req) => gallery.list({ favorites: req.query.favoritas === "1" })));
   app.get("/api/ocio/artworks/:id", handle((req) => gallery.get(req.params.id)));
@@ -33,7 +33,7 @@ export default function registerGalleryRoutes(app) {
     }, 201)
   );
   app.patch("/api/ocio/artworks/:id", handle((req) => gallery.update(req.params.id, req.body || {})));
-  app.delete("/api/ocio/artworks/:id", handle((req) => void gallery.remove(req.params.id)));
+  app.delete("/api/ocio/artworks/:id", handle(async (req) => void (await gallery.remove(req.params.id))));
 
   app.get("/api/ocio/easel", handle(() => gallery.easel()));
   app.put("/api/ocio/easel/settings", handle((req) => gallery.setEaselSettings(req.body || {})));

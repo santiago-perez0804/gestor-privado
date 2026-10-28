@@ -12,9 +12,9 @@ const SYNC_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const REFRESH_BEFORE_MS = 10 * 24 * 60 * 60 * 1000;
 const MIN_TOKEN_AGE_MS = 24 * 60 * 60 * 1000;
 
-function upsertSnapshot(projectId, date, values) {
+async function upsertSnapshot(projectId, date, values) {
   const ts = nowIso();
-  db.prepare(
+  await db.prepare(
     `INSERT INTO project_snapshots
       (projectId, date, followers, follows, mediaCount, reach, views, profileViews, accountsEngaged, createdAt, updatedAt)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -50,13 +50,13 @@ export async function recordTodaySnapshot(project, profile) {
   } catch {
     /* las métricas de interacción son opcionales; los seguidores alcanzan para el snapshot */
   }
-  upsertSnapshot(project.id, todayDateInputValue(), {
+  await upsertSnapshot(project.id, todayDateInputValue(), {
     followers: profile.followers_count,
     follows: profile.follows_count,
     mediaCount: profile.media_count,
     ...insights,
   });
-  db.prepare(
+  await db.prepare(
     "UPDATE projects SET igUsername = ?, igProfilePictureUrl = ?, lastSyncAt = ?, lastSyncError = NULL WHERE id = ?"
   ).run(profile.username, profile.profile_picture_url ?? null, nowIso(), project.id);
 }
@@ -72,7 +72,7 @@ export async function backfillFollowers(project, currentFollowers) {
   let followers = currentFollowers;
   for (const { date, delta } of sorted) {
     // El total al cierre de ese día es el actual menos lo ganado en los días posteriores.
-    if (!exists.get(project.id, date)) upsertSnapshot(project.id, date, { followers });
+    if (!await exists.get(project.id, date)) await upsertSnapshot(project.id, date, { followers });
     followers -= delta ?? 0;
   }
 }
@@ -85,7 +85,7 @@ async function maybeRefreshToken(project) {
   if (!needsRefresh || tokenAge < MIN_TOKEN_AGE_MS) return project;
   const { accessToken, expiresAt: newExpiry } = await refreshLongLivedToken(project.accessToken);
   clearInstagramCache(project.accessToken);
-  db.prepare("UPDATE projects SET accessToken = ?, tokenIssuedAt = ?, tokenExpiresAt = ? WHERE id = ?").run(
+  await db.prepare("UPDATE projects SET accessToken = ?, tokenIssuedAt = ?, tokenExpiresAt = ? WHERE id = ?").run(
     accessToken,
     nowIso(),
     newExpiry,
@@ -100,20 +100,20 @@ export async function syncInstagramProject(project) {
     const profile = await getProfile(current.accessToken, { fresh: true });
     await recordTodaySnapshot(current, profile);
   } catch (err) {
-    db.prepare("UPDATE projects SET lastSyncError = ? WHERE id = ?").run(err.message, project.id);
+    await db.prepare("UPDATE projects SET lastSyncError = ? WHERE id = ?").run(err.message, project.id);
   }
 }
 
 export async function syncInstagramProjects() {
-  const projects = db
+  const projects = await db
     .prepare("SELECT * FROM projects WHERE type = 'instagram' AND accessToken IS NOT NULL")
     .all();
   for (const p of projects) await syncInstagramProject(p);
 }
 
-export function startInstagramSync() {
+export async function startInstagramSync() {
   syncInstagramProjects().catch((err) => console.error("[instagram-sync]", err));
-  setInterval(() => {
+  setInterval(async () => {
     syncInstagramProjects().catch((err) => console.error("[instagram-sync]", err));
   }, SYNC_INTERVAL_MS).unref();
 }

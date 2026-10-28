@@ -9,11 +9,11 @@ const limiter = createLimiter(250);
 
 export const rawgConfigured = () => !!process.env.RAWG_API_KEY;
 
-function request(path, params = {}) {
+async function request(path, params = {}) {
   const url = new URL(BASE + path);
   url.searchParams.set("key", process.env.RAWG_API_KEY);
   for (const [k, v] of Object.entries(params)) if (v != null) url.searchParams.set(k, v);
-  return fetchJson(url, { source: "rawg", limiter, retries: 2 });
+  return await fetchJson(url, { source: "rawg", limiter, retries: 2 });
 }
 
 export function normalizeRawg(raw, details = null) {
@@ -32,8 +32,8 @@ export function normalizeRawg(raw, details = null) {
   };
 }
 
-export function rawgDetails(cache, id) {
-  return cached(cache, `rawg:details:${id}`, 30 * DAY, async () => {
+export async function rawgDetails(cache, id) {
+  return await cached(cache, `rawg:details:${id}`, 30 * DAY, async () => {
     const d = await request(`/games/${id}`);
     return normalizeRawg(d, d);
   });
@@ -44,5 +44,5 @@ export async function gameSearch(cache, query, { enrich = 4 } = {}) {
     const r = await request("/games", { search: query, page_size: 10, search_precise: "true" });
     return (r.results || []).map((x) => normalizeRawg(x));
   });
-  return Promise.all(results.map((r, i) => (i < enrich ? rawgDetails(cache, r.externalId).catch(() => r) : r)));
+  return Promise.all(results.map(async (r, i) => (i < enrich ? rawgDetails(cache, r.externalId).catch(() => r) : r)));
 }

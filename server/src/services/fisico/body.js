@@ -7,49 +7,50 @@ const r2 = (n) => (n == null ? null : Math.round(n * 100) / 100);
 
 export function createBody(db) {
   /** Pesadas como { id, day, kg, recordedAt, note } (el día en la zona del usuario). */
-  function weighIns() {
-    const tz = getSettings(db).timeZone;
-    return db
+  async function weighIns() {
+    const tz = (await getSettings(db)).timeZone;
+    return (await db
       .prepare("SELECT id, weight, recordedAt, note FROM weights ORDER BY recordedAt")
-      .all()
+      .all())
       .map((w) => ({ id: w.id, day: dayOf(w.recordedAt, tz), kg: w.weight, recordedAt: w.recordedAt, note: w.note }));
   }
 
   /** Tendencia de peso de un día (por defecto hoy); null si no hay pesadas. */
-  function trendOn(day = today(db)) {
-    const series = trendSeries(weighIns(), { until: day });
+  async function trendOn(day) {
+    day ??= await today(db);
+    const series = trendSeries(await weighIns(), { until: day });
     const v = trendAt(series, day);
     return v == null ? null : Math.round(v * 10) / 10;
   }
 
   /** La meta de peso vigente (la última cargada). */
-  const goal = () => db.prepare("SELECT * FROM goals WHERE type = 'weight' ORDER BY id DESC LIMIT 1").get() ?? null;
+  const goal = async () => await db.prepare("SELECT * FROM goals WHERE type = 'weight' ORDER BY id DESC LIMIT 1").get() ?? null;
 
   /** Poner o cambiar la meta (kg y fecha opcional). También actualiza el ajuste viejo que usa el widget. */
-  function setGoal({ target, targetDate = null }) {
+  async function setGoal({ target, targetDate = null }) {
     const t = Number(target);
     if (!(t > 20 && t < 400)) throw bad("invalid_target");
     if (targetDate && !/^\d{4}-\d{2}-\d{2}$/.test(targetDate)) throw bad("invalid_targetDate");
     const ts = nowIso();
-    const g = goal();
-    if (g) db.prepare("UPDATE goals SET target = ?, targetDate = ?, achievedAt = NULL, updatedAt = ? WHERE id = ?").run(t, targetDate || null, ts, g.id);
-    else db.prepare("INSERT INTO goals (type, target, targetDate, createdAt, updatedAt) VALUES ('weight', ?, ?, ?, ?)").run(t, targetDate || null, ts, ts);
-    db.prepare("INSERT INTO settings (key, value) VALUES ('weight_goal_kg', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(String(t));
-    return goal();
+    const g = await goal();
+    if (g) await db.prepare("UPDATE goals SET target = ?, targetDate = ?, achievedAt = NULL, updatedAt = ? WHERE id = ?").run(t, targetDate || null, ts, g.id);
+    else await db.prepare("INSERT INTO goals (type, target, targetDate, createdAt, updatedAt) VALUES ('weight', ?, ?, ?, ?)").run(t, targetDate || null, ts, ts);
+    await db.prepare("INSERT INTO settings (key, value) VALUES ('weight_goal_kg', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(String(t));
+    return await goal();
   }
 
   /**
    * Todo lo de la pantalla Peso: tendencia, ritmo de 4 semanas, meta con proyección, semáforo,
    * promedios semanales y los puntos del gráfico (pesadas, tendencia y proyecciones).
    */
-  function summary() {
-    const settings = getSettings(db);
-    const t = today(db);
-    const list = weighIns();
+  async function summary() {
+    const settings = await getSettings(db);
+    const t = await today(db);
+    const list = await weighIns();
     const series = trendSeries(list, { until: t });
     const current = trendAt(series, t);
     const rate = weeklyRate(series, t);
-    const g = goal();
+    const g = await goal();
     const startKg = g ? trendAt(series, dayOf(g.createdAt, settings.timeZone)) ?? series[0]?.trend ?? null : null;
     const proj = g && current != null ? projection({ current, kgPerWeek: rate?.kgPerWeek ?? null, target: g.target, targetDate: g.targetDate, today: t, startKg }) : null;
     const healthy = settings.healthyRatePct;

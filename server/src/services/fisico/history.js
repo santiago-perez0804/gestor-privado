@@ -12,10 +12,10 @@ export function createHistory(db) {
   );
 
   /** Sesiones terminadas con ese ejercicio, la más reciente primero (todas las series completadas). */
-  function sessions(exerciseId, { limit = Infinity, exceptSessionId = null } = {}) {
+  async function sessions(exerciseId, { limit = Infinity, exceptSessionId = null } = {}) {
     const out = [];
     let cur = null;
-    for (const r of setsOf.iterate(exerciseId)) {
+    for (const r of await setsOf.all(exerciseId)) {
       if (r.sessionId === exceptSessionId) continue;
       if (!cur || cur.sessionId !== r.sessionId) {
         if (out.length >= limit) break;
@@ -30,25 +30,25 @@ export function createHistory(db) {
   const working = (s) => s.sets.filter((x) => x.type === "working");
 
   /** Lo que hiciste la última vez (todas las series en orden: la columna "Anterior"). */
-  const last = (exerciseId, opts) => sessions(exerciseId, { limit: 1, ...opts })[0] ?? null;
+  const last = async (exerciseId, opts) => (await sessions(exerciseId, { limit: 1, ...opts }))[0] ?? null;
 
   /** Récords del ejercicio (mejor 1RM estimado y mejor peso por reps). */
-  function records(exerciseId, { isBodyweight = false, exceptSessionId = null } = {}) {
-    const flat = sessions(exerciseId, { exceptSessionId }).flatMap((s) => working(s).map((x) => ({ ...x, date: s.date, sessionId: s.sessionId })));
+  async function records(exerciseId, { isBodyweight = false, exceptSessionId = null } = {}) {
+    const flat = (await sessions(exerciseId, { exceptSessionId })).flatMap((s) => working(s).map((x) => ({ ...x, date: s.date, sessionId: s.sessionId })));
     return exerciseRecords(flat, { isBodyweight });
   }
 
   /** Evolución sesión por sesión (para Récords): 1RM estimado del día y si fue récord. */
-  function progress(exerciseId, { isBodyweight = false } = {}) {
+  async function progress(exerciseId, { isBodyweight = false } = {}) {
     return e1rmHistory(
-      sessions(exerciseId).map((s) => ({ date: s.date, sessionId: s.sessionId, sets: working(s) })),
+      (await sessions(exerciseId)).map((s) => ({ date: s.date, sessionId: s.sessionId, sets: working(s) })),
       { isBodyweight }
     );
   }
 
   /** Sugerencia para la próxima vez (doble progresión con el paso del equipo). */
-  function suggestion(item, exercise, settings, opts) {
-    const hist = sessions(item.exerciseId, { limit: 3, ...opts }).map((s) => ({ date: s.date, sets: working(s) }));
+  async function suggestion(item, exercise, settings, opts) {
+    const hist = (await sessions(item.exerciseId, { limit: 3, ...opts })).map((s) => ({ date: s.date, sets: working(s) }));
     const stepKg = settings.progressionStepKg?.[exercise?.equipment] ?? 2.5;
     return suggestNext({ sets: item.sets, repMin: item.repMin, repMax: item.repMax }, hist, { stepKg });
   }

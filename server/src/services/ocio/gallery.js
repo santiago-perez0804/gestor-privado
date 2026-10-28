@@ -1,8 +1,7 @@
 // Galería de pixel art: alta con validación por contenido, edición, borrado (con sus archivos) y
 // la configuración y secuencia del atril (guardada en `settings`).
-import { writeFileSync, unlinkSync, existsSync } from "node:fs";
-import { join } from "node:path";
 import { randomUUID } from "node:crypto";
+import { storage, localStore } from "../storage/index.js";
 import { validateImage, nextInventoryCode, easelSettings, easelSequence, dailyIndex, MAX_THUMB_BYTES } from "../../lib/ocio/images.js";
 import { todayLocal } from "./library.js";
 
@@ -10,7 +9,9 @@ const EDITABLE = ["title", "technique", "sizeLabel", "createdOn", "description",
 const SETTING_KEYS = { interval: "ocio.easel.interval", order: "ocio.easel.order", showOnHome: "ocio.easel.showOnHome" };
 const err = (status, message) => Object.assign(new Error(message), { status });
 
+/** @param {string} [dir] carpeta local (tests); por defecto el almacenamiento "artworks" (Supabase o local). */
 export function createGallery(db, dir) {
+  const store = dir ? localStore(dir) : storage("artworks");
   const toItem = (r) =>
     r && {
       ...r,
@@ -20,15 +21,15 @@ export function createGallery(db, dir) {
       thumbUrl: `/artworks/${r.thumbPath || r.imagePath}`,
     };
 
-  function list({ favorites } = {}) {
-    return db
+  async function list({ favorites } = {}) {
+    return (await db
       .prepare(`SELECT * FROM artworks ${favorites ? "WHERE isFavorite = 1" : ""} ORDER BY COALESCE(createdOn, substr(createdAt, 1, 10)) DESC, id DESC`)
-      .all()
+      .all())
       .map(toItem);
   }
 
-  function get(id) {
-    const item = toItem(db.prepare("SELECT * FROM artworks WHERE id = ?").get(Number(id)));
+  async function get(id) {
+    const item = toItem(await db.prepare("SELECT * FROM artworks WHERE id = ?").get(Number(id)));
     if (!item) throw err(404, "not_found");
     return item;
   }
@@ -47,11 +48,11 @@ export function createGallery(db, dir) {
     return out;
   }
 
-  const codeTaken = (code, exceptId = 0) => !!db.prepare("SELECT 1 FROM artworks WHERE inventoryCode = ? COLLATE NOCASE AND id != ?").get(code, exceptId);
-  const nextCode = () => nextInventoryCode(db.prepare("SELECT inventoryCode FROM artworks").all().map((r) => r.inventoryCode));
+  const codeTaken = async (code, exceptId = 0) => !!await db.prepare("SELECT 1 FROM artworks WHERE lower(inventoryCode) = lower(?) AND id != ?").get(code, exceptId);
+  const nextCode = async () => nextInventoryCode((await db.prepare("SELECT inventoryCode FROM artworks").all()).map((r) => r.inventoryCode));
 
   /** Alta: guarda el original tal cual (pixel art sin recomprimir) y la miniatura si vino. */
-  function create({ image, thumb, fields = {}, originalName }) {
+  async function create({ image, thumb, fields = {}, originalName }) {
     const info = validateImage(image);
     let thumbInfo = null;
     if (thumb?.length) {
@@ -60,75 +61,74 @@ export function createGallery(db, dir) {
     }
     const data = clean(fields);
     const title = data.title || String(originalName || "").replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim() || "Sin título";
-    const code = data.inventoryCode || nextCode();
-    if (codeTaken(code)) throw err(409, "inventory_code_taken");
+    const code = data.inventoryCode || await nextCode();
+    if (await codeTaken(code)) throw err(409, "inventory_code_taken");
     const base = randomUUID();
     const imagePath = `${base}.${info.ext}`;
     const thumbPath = thumbInfo ? `${base}.thumb.png` : null;
-    writeFileSync(join(dir, imagePath), image);
-    if (thumbPath) writeFileSync(join(dir, thumbPath), thumb);
+    await store.put(imagePath, image, { contentType: info.mime });
+    if (thumbPath) await store.put(thumbPath, thumb, { contentType: "image/png" });
     const now = new Date().toISOString();
     try {
-      const { lastInsertRowid } = db
+      const { lastInsertRowid } = await db
         .prepare(
           `INSERT INTO artworks (title, technique, sizeLabel, createdOn, description, inventoryCode, imagePath, thumbPath, width, height, mime, isFavorite, showOnEasel, createdAt, updatedAt)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .run(title, data.technique ?? null, data.sizeLabel ?? `${info.width} × ${info.height} px`, data.createdOn ?? null, data.description ?? null, code, imagePath, thumbPath, info.width, info.height, info.mime, data.isFavorite ?? 0, data.showOnEasel ?? 1, now, now);
-      return get(lastInsertRowid);
+      return await get(lastInsertRowid);
     } catch (e) {
-      removeFiles({ imagePath, thumbPath });
+      await removeFiles({ imagePath, thumbPath });
       throw e;
     }
   }
 
-  function update(id, fields) {
-    const current = get(id);
+  async function update(id, fields) {
+    const current = await get(id);
     const data = clean(fields);
-    if (data.inventoryCode && codeTaken(data.inventoryCode, current.id)) throw err(409, "inventory_code_taken");
+    if (data.inventoryCode && await codeTaken(data.inventoryCode, current.id)) throw err(409, "inventory_code_taken");
     if ("inventoryCode" in data && !data.inventoryCode) data.inventoryCode = current.inventoryCode;
     const keys = Object.keys(data);
-    if (keys.length) db.prepare(`UPDATE artworks SET ${keys.map((k) => `${k} = ?`).join(", ")}, updatedAt = ? WHERE id = ?`).run(...keys.map((k) => data[k]), new Date().toISOString(), current.id);
-    return get(current.id);
+    if (keys.length) await db.prepare(`UPDATE artworks SET ${keys.map((k) => `${k} = ?`).join(", ")}, updatedAt = ? WHERE id = ?`).run(...keys.map((k) => data[k]), new Date().toISOString(), current.id);
+    return await get(current.id);
   }
 
-  function removeFiles({ imagePath, thumbPath }) {
+  async function removeFiles({ imagePath, thumbPath }) {
     for (const f of [imagePath, thumbPath]) {
       if (!f) continue;
-      const p = join(dir, f);
       try {
-        if (existsSync(p)) unlinkSync(p);
+        await store.remove(f);
       } catch {
-        // si el archivo está en uso, queda huérfano; no es grave
+        // queda huérfano; no es grave
       }
     }
   }
 
-  function remove(id) {
-    const current = get(id);
-    db.prepare("DELETE FROM artworks WHERE id = ?").run(current.id);
-    removeFiles(current);
+  async function remove(id) {
+    const current = await get(id);
+    await db.prepare("DELETE FROM artworks WHERE id = ?").run(current.id);
+    await removeFiles(current);
   }
 
-  function getEaselSettings() {
-    const rows = db.prepare(`SELECT key, value FROM settings WHERE key IN (${Object.values(SETTING_KEYS).map(() => "?").join(", ")})`).all(...Object.values(SETTING_KEYS));
+  async function getEaselSettings() {
+    const rows = await db.prepare(`SELECT key, value FROM settings WHERE key IN (${Object.values(SETTING_KEYS).map(() => "?").join(", ")})`).all(...Object.values(SETTING_KEYS));
     const raw = {};
     for (const [name, key] of Object.entries(SETTING_KEYS)) raw[name] = rows.find((r) => r.key === key)?.value;
     return easelSettings(raw);
   }
 
-  function setEaselSettings(patch) {
-    const next = easelSettings({ ...getEaselSettings(), ...patch });
+  async function setEaselSettings(patch) {
+    const next = easelSettings({ ...await getEaselSettings(), ...patch });
     const up = db.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value");
-    for (const [name, key] of Object.entries(SETTING_KEYS)) up.run(key, name === "showOnHome" ? (next.showOnHome ? "1" : "0") : next[name]);
+    for (const [name, key] of Object.entries(SETTING_KEYS)) await up.run(key, name === "showOnHome" ? (next.showOnHome ? "1" : "0") : next[name]);
     return next;
   }
 
   /** Lo que necesita el atril (Inicio o modo museo): configuración, obras en orden y por cuál arrancar. */
-  function easel(today = todayLocal()) {
-    const settings = getEaselSettings();
-    const items = easelSequence(list(), { order: settings.order, seed: today });
-    return { settings, items, startIndex: settings.interval === "daily" ? dailyIndex(items.length, today) : 0, total: db.prepare("SELECT COUNT(*) AS n FROM artworks").get().n };
+  async function easel(today = todayLocal()) {
+    const settings = await getEaselSettings();
+    const items = easelSequence(await list(), { order: settings.order, seed: today });
+    return { settings, items, startIndex: settings.interval === "daily" ? dailyIndex(items.length, today) : 0, total: (await db.prepare("SELECT COUNT(*) AS n FROM artworks").get()).n };
   }
 
   return { list, get, create, update, remove, getEaselSettings, setEaselSettings, easel };
